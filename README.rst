@@ -1,7 +1,16 @@
-# karman_taichi
+==============
+karman_taichi
+==============
 
-# Description
+karman_taichi is a incompressible fluid solver written in Taichi language. It solves the fluid field 
 
-# Navigate the code
+Incompressible fluid solver
+--------------
 
-# Current issues 
+
+Navigating the code
+--------------
+
+
+Current issues 
+--------------
