@@ -49,8 +49,6 @@ v_disp = ti.field(dtype=ti.f64, shape=(3*(nx + 2), 3*(ny + 2)))
 ct = ti.field(dtype=ti.i32, shape=(nx + 2, ny + 2))
 
 # for solving u momentum using Jacobian
-# Au = ti.field(dtype=ti.f64, shape=((nx + 1) * ny, (nx + 1) * ny))
-# Mu = ti.field(dtype=ti.f64, shape=((nx + 1) * ny, (nx + 1) * ny))
 # Au and Mu declared as multiple layers to avoid virtual memory error.
 Au = ti.field(dtype=ti.f64)
 Mu = ti.field(dtype=ti.f64)
@@ -81,8 +79,6 @@ tu = ti.field(dtype=ti.f64)
 ti.root.dense(ti.i, (nx+1)*ny).place(pu_hat, su, su_hat, tu)
 
 # for solving v momentum using Jacobian
-# Av = ti.field(dtype=ti.f64, shape=(nx * (ny + 1), nx * (ny + 1)))
-# Mv = ti.field(dtype=ti.f64, shape=(nx * (ny + 1), nx * (ny + 1)))
 Av = ti.field(dtype=ti.f64)
 Mv = ti.field(dtype=ti.f64)
 ti.root.pointer(ti.ij,(nx*(ny+1)//ptr_size,nx*(ny+1)//ptr_size)).dense(ti.ij,(ptr_size,ptr_size)).place(Av, Mv)
