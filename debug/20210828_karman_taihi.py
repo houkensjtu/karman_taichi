@@ -2,7 +2,7 @@ import taichi as ti
 import time
 import numpy as np
 
-ti.init(default_fp=ti.f64, arch=ti.cpu)
+ti.init(default_fp=ti.f64, arch=ti.cpu, kernel_profiler=True)
 
 # Length and height of the channel
 lx = 0.5
@@ -153,14 +153,23 @@ def init():
             v[i, j] = 0
             v0[i, j] = 0
 
-            
 def write_matrix(mat, name):
     print("    >> Writing matrix data to", name, ".csv ...")
     np.savetxt(name + ".csv", mat.to_numpy(), delimiter = ",")
+
     
+def visual_matrix(mat, name):
+    a = mat.to_numpy()
+    import matplotlib.pyplot as plt
+    import matplotlib.cm as cm
+    # 'nearest' interpolation - faithful but blocky
+    plt.imshow(a, interpolation='nearest', cmap=cm.rainbow)
+    plt.colorbar()
+    plt.show()    
+
 
 @ti.kernel
-def fill_Au():
+def fill_Au_ver2():
     for i, j in ti.ndrange((1, nx + 2), (1, ny + 1)):
         k = (i - 1) * ny + (j - 1)
         
@@ -249,7 +258,7 @@ def fill_Au():
 
 
 @ti.kernel
-def fill_Av():
+def fill_Av_ver2():
     for i, j in ti.ndrange((1, nx + 1), (1, ny + 2)):
         k = (i - 1) * (ny + 1) + (j - 1)
         # Upper and lower boundary
@@ -295,7 +304,7 @@ def fill_Av():
 
 
 @ti.kernel
-def fill_Ap():
+def fill_Ap_ver2():
     for i, j in ti.ndrange((1, nx + 1), (1, ny + 1)):
         k = (i - 1) * ny + (j - 1)
         bp[k] = rho * (u[i, j] - u[i + 1, j]) * dy + rho * (v[i, j + 1] - v[i, j]) * dx
@@ -339,6 +348,219 @@ def fill_Ap():
             Mp[i, j] = 0.0            
 
             
+
+@ti.kernel
+def full_jacobian(A: ti.template(), b: ti.template(), x: ti.template(), x_new: ti.template()) -> ti.f64:
+    for i in range(x.shape[0]):
+        r = b[i]
+        for j in range(x.shape[0]):
+            if i != j:
+                r -= A[i, j] * x[j]
+        x_new[i] = r / A[i, i]
+        x[i] = r / A[i, i]
+    for i in range(x.shape[0]):
+        x[i] = x_new[i]
+
+    res = 0.0
+
+    for i in range(x.shape[0]):
+        r = b[i] * 1.0
+        for j in range(x.shape[0]):
+            r -= A[i, j] * x[j]
+        res += r * r
+    return ti.sqrt(res)
+
+
+@ti.kernel
+def quick_jacobian(A: ti.template(), b: ti.template(), x: ti.template(), x_new: ti.template()) -> ti.f64:
+    for i in range(x.shape[0]):
+        r = b[i]
+        for j in range(i-ny-1, i+ny+2):
+            if i != j:
+                r -= A[i, j] * x[j]
+        x_new[i] = r / A[i, i]
+        x[i] = r / A[i, i]
+    for i in range(x.shape[0]):
+        x[i] = x_new[i]
+
+    res = 0.0
+
+    for i in range(x.shape[0]):
+        r = b[i] * 1.0
+        for j in range(i-ny-1, i+ny+2):
+            r -= A[i, j] * x[j]
+        res += r * r
+    return ti.sqrt(res)
+
+
+# Quick version of conjugate gradient
+# Only multiply non-zero elements in A
+# Other calculations are exactly same
+@ti.kernel
+def struct_cg(
+         A: ti.template(),
+         b: ti.template(),
+         x: ti.template(),
+         Ax: ti.template(),
+         Ap: ti.template(),
+         r: ti.template(),
+         p: ti.template(),
+         nx: ti.i32,
+         ny: ti.i32,
+         eps: ti.f64,
+         output: ti.i32):
+    n = (nx+1) * ny
+    # dot(A,x)
+    for i in range(n):
+        Ax[i] = 0.0
+        for j in range(i-ny, i+ny+1):
+            Ax[i] += A[i, j] * x[j]
+    # r = b - dot(A,x)
+    # p = r
+    for i in range(n):
+        r[i] = b[i] - Ax[i]
+        p[i] = r[i]
+    rsold = 0.0
+    for i in range(n):
+        rsold += r[i] * r[i]
+
+    for steps in range(100*n):
+        # dot(A,p)
+        for i in range(n):
+            Ap[i] = 0.0
+            for j in range(i-ny, i+ny+1):
+                Ap[i] += A[i, j] * p[j]
+
+        # dot(p, Ap) => pAp
+        pAp = 0.0
+        for i in range(n):
+            pAp += p[i] * Ap[i]
+
+        alpha = rsold / pAp
+
+        # x = x + dot(alpha,p)
+        # r = r - dot(alpha,Ap)
+        for i in range(n):
+            x[i] += alpha * p[i]
+            r[i] -= alpha * Ap[i]
+
+        rsnew = 0.0
+        for i in range(n):
+            rsnew += r[i] * r[i]
+
+        if ti.sqrt(rsnew) < eps:
+            if output:
+                print("        >> The solution has converged...")
+            break
+
+        for i in range(n):
+            p[i] = r[i] + (rsnew / rsold) * p[i]
+        rsold = rsnew
+        
+        if output:
+            print("        >> Iteration ", steps, ", residual = ", rsold)
+
+
+
+@ti.kernel
+def bicg(A: ti.template(),
+         b: ti.template(),
+         x: ti.template(),
+         M: ti.template(),
+         Ax: ti.template(),
+         Ap: ti.template(),
+         Ap_tld: ti.template(),
+         r: ti.template(),
+         p: ti.template(),
+         z: ti.template(),
+         r_tld: ti.template(),
+         p_tld: ti.template(),
+         z_tld: ti.template(),
+         nx: ti.i32,
+         ny: ti.i32,
+         n: ti.i32,
+         eps: ti.f64,
+         output: ti.i32):
+
+    # dot(A,x)
+    for i in range(n):
+        Ax[i] = 0.0
+        for j in range(i-ny-1, i+ny+2):
+            Ax[i] += A[i, j] * x[j]
+
+    # r = b - dot(A,x)
+    for i in range(n):
+        r[i] = b[i] - Ax[i]
+        r_tld[i] = r[i]
+
+    rsold = 0.0
+    for i in range(n):
+        rsold += r[i] * r[i]
+
+    if output:
+        print("        >> The initial res is ", rsold)
+
+    rho_1 = 1.0
+    for steps in range(n):
+
+        for i in range(n):
+            z[i] = 1.0 / M[i, i] * r[i]
+            z_tld[i] = 1.0 / M[i, i] * r_tld[i]
+
+        rho = 0.0
+        for i in range(n):
+            rho += z[i] * r_tld[i]
+        if rho == 0.0:
+            if output:
+                print("        >> Bicg failed...")
+            break
+
+        if steps == 0:
+            for i in range(n):
+                p[i] = z[i]
+                p_tld[i] = z_tld[i]
+        else:
+            beta = rho / rho_1
+            for i in range(n):
+                p[i] = z[i] + beta * p[i]
+                p_tld[i] = z_tld[i] + beta * p_tld[i]
+
+        # dot(A,p)
+        for i in range(n):
+            Ap[i] = 0.0
+            Ap_tld[i] = 0.0
+            for j in range(i-ny-1, i+ny+2):
+                # Ap => q
+                Ap[i] += A[i, j] * p[j]
+                # Ap_tld => q_tld
+                Ap_tld[i] += A[j, i] * p_tld[j]
+
+        # dot(p, Ap) => pAp
+        pAp = 0.0
+        for i in range(n):
+            pAp += p_tld[i] * Ap[i]
+
+        alpha = rho / pAp
+
+        for i in range(n):
+            x[i] += alpha * p[i]
+            r[i] -= alpha * Ap[i]
+            r_tld[i] -= alpha * Ap_tld[i]
+
+        rsnew = 0.0
+        for i in range(n):
+            rsnew += r[i] * r[i]
+        rsold = rsnew
+        if output:
+            print("        >> Iteration ", steps, ", residual = ", rsold)
+
+        if ti.sqrt(rsnew) < eps:
+            if output:
+                print("        >> The solution has converged...")
+            break
+        rho_1 = rho
+
+
 @ti.kernel
 def bicgstab(A:ti.template(),
              b:ti.template(),
@@ -464,6 +686,7 @@ def xu_back():
         u[i + 1, j + 1] = u[i + 1, j + 1] + velo_rel * (xu[i * ny + j] - u[i + 1, j + 1])
             
 
+
 @ti.kernel
 def xv_back():
     for i, j in ti.ndrange(nx, ny + 1):
@@ -478,30 +701,73 @@ def xp_back():
         pcor[i + 1, j + 1] = xp[i * ny + j]
 
 
+def solve_momentum_jacob():
+    for steps in range(50):
+        residual = 10.0
+        residual_x = 0.0
+        residual_y = 0.0
+        while residual > 1e-5:
+            fill_Au()
+            fill_Av()
+            print("Residual = ", residual)
+            residual_x = quick_jacobian(Au, bu, xu, xu_new)
+            residual_y = quick_jacobian(Av, bv, xv, xv_new)
+            residual = residual_x + residual_y
+        xu_back()
+        xv_back()
+
+
+def solve_momentum_bicg(eps, max_iterations, solve_output, linalg_output):
+    print("    >> Now Solving momentum equations using BiCG...")    
+    for steps in range(max_iterations):
+        if solve_output:
+            print("    [", steps,"/",max_iterations, "] Iteratively solving momentum equation using BiCG...")            
+        fill_Au()
+        fill_Av()
+        # Confirmed that bicg will give an answer for Au but the
+        # convergence is slow and spiky.
+        bicg(Au, bu, xu, Mu, Auxu, Aupu, Aupu_tld, ru,
+             pu, zu, ru_tld, pu_tld, zu_tld, nx, ny, (nx+1)*ny, eps, linalg_output)
+        bicg(Av, bv, xv, Mv, Avxv, Avpv, Avpv_tld, rv,
+             pv, zv, rv_tld, pv_tld, zv_tld, nx, ny, nx*(ny+1), eps, linalg_output)
+        # Confirmed that simple CG will diverge on this Au matrix.
+        # struct_cg(Au, bu, xu, Auxu, Aupu, ru, pu, nx, ny)
+        xu_back()
+        xv_back()
+
+        
+# solve_output contorls whether show iteration history of momentum eqn.
 # linalg_output controls whether show convergence of BiCGSTAB solver.
 def solve_momentum_bicgstab(eps, max_iterations, solve_output, linalg_output):
     print("    >> Now Solving momentum equations using BiCGSTAB...")
     for steps in range(max_iterations):
         if solve_output:
             print("    [", steps,"/",max_iterations, "] Iteratively solving momentum equation using BiCGSTAB...")
-        fill_Au()
-        fill_Av()
+        fill_Au_ver2()
+        fill_Av_ver2()
         bicgstab(Au, bu, xu, Mu, Auxu, ru, ru_tld, pu, pu_hat,
                  Aupu, su, su_hat, tu, nx, ny, (nx+1)*ny, eps, linalg_output)
         bicgstab(Av, bv, xv, Mv, Avxv, rv, rv_tld, pv, pv_hat,
                  Avpv, sv, sv_hat, tv, nx, ny, nx*(ny+1), eps, linalg_output)
         xu_back()
         xv_back()
+    # write_matrix(Au, "Au")
+    # write_matrix(Av, "Av")    
 
 
 def solve_pcorrection_bicgstab(eps, linalg_output):
     print("    >> Now Solving pressure correction using BiCGSTAB...")
-    
-    fill_Ap()
-    
+    fill_Ap_ver2()
+
+    # write_matrix(Au, "Au")
+    # write_matrix(Av, "Av")
     bicgstab(Ap, bp, xp, Mp, Apxp, rp, rp_tld, pp, pp_hat,
              Appp, sp, sp_hat, tp, nx, ny, nx * ny, eps, linalg_output)
     xp_back()
+    # write_matrix(Ap, "Ap")
+    # write_matrix(bp, "bp")
+    # write_matrix(xp, "xp")            
+    # write_matrix(pcor, "pcor")
 
 
 @ti.kernel
@@ -633,6 +899,9 @@ if __name__ == "__main__":
         for subtime_step in range(500):
             pcor_current = 10000.0
             start = time.time()
+            #solve_momentum_jacob()
+            #solve_momentum_bicg()
+            # (eps, max_iterations, solver_output, linalg_output)
             solve_momentum_bicgstab(1e-8, 30, 0, 0)
             print(f'    >> [ time = {time_step * dt: .4f} ] It took {time.time()-start: .2f} sec to solve the momentum equation.')
 
@@ -655,6 +924,7 @@ if __name__ == "__main__":
             if pcor_current < 1.0e-4 * pcor_max:
                 print(f'    >> [ time = {time_step * dt: .4f} ] The flow field has converged on this time step.')
                 break
+            ti.print_kernel_profile_info()
             
         time_forward()
         
@@ -663,7 +933,6 @@ if __name__ == "__main__":
         img = np.concatenate((pcor_disp.to_numpy(), udiv_disp.to_numpy(), p_disp.to_numpy(), u_disp.to_numpy(), v_disp.to_numpy()), axis =1)
         gui.set_image(img)
 
-        # Add captions to the output graph
         # text_color = 0x3355ff
         # gui.text(content = "P correction"  , pos = (0.5,0.1), font_size = 20, color=text_color )
         # gui.text(content = "Velocity div", pos = (0.5,0.3), font_size = 20, color=text_color )
