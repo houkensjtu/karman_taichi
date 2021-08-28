@@ -2,7 +2,7 @@ import taichi as ti
 import time
 import numpy as np
 
-ti.init(default_fp=ti.f64, arch=ti.cpu)
+ti.init(default_fp=ti.f64, arch=ti.cpu, kernel_profiler=True)
 
 # Length and height of the channel
 lx = 0.5
@@ -924,6 +924,7 @@ if __name__ == "__main__":
             if pcor_current < 1.0e-4 * pcor_max:
                 print(f'    >> [ time = {time_step * dt: .4f} ] The flow field has converged on this time step.')
                 break
+            ti.print_kernel_profile_info()
             
         time_forward()
         
