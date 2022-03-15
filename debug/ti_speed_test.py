@@ -1,11 +1,11 @@
 import taichi as ti
 import time
 
-ti.init(arch=ti.gpu, kernel_profiler=True)
+ti.init(arch=ti.gpu, default_fp=ti.f32)
 
-n = 1024*1024
-v1 = ti.field(dtype=ti.f64, shape = n)
-v2 = ti.field(dtype=ti.f64, shape = n)
+n = 4096
+v1 = ti.field(dtype=float, shape = n)
+v2 = ti.field(dtype=float, shape = n)
 
 @ti.kernel
 def init():
@@ -14,49 +14,31 @@ def init():
         v2[i] = 2.0
 
 @ti.kernel
-def reduce_para(v1:ti.template(), v2:ti.template())->ti.f64:
+def reduce_para()->ti.f32:
     n = v1.shape[0]
-    # sum = ti.cast(0.0, ti.f64)
     sum = 0.0
     for i in range(n):
         sum += v1[i]*v2[i]
     return sum
 
 @ti.kernel
-def reduce_seri(v1:ti.template(), v2:ti.template())->ti.f64:
+def reduce_seri()->ti.f32:
     n = v1.shape[0]
-    # sum = ti.cast(0.0, ti.f64)
     sum = 0.0    
     for _ in range(1):
         for i in range(n):
             sum += v1[i]*v2[i]
     return sum
 
-def reduce(v1, v2, n):
-    sum = 0.0
-    for i in range(n):
-        sum += v1[i]*v2[i]
-    return sum
-
 print('Initializing...')
 init()
 
-# print('Reducing in Python scope...')
-# start = time.time()
-# print(reduce(v1, v2, n))
-# print(time.time() - start)
-
-print('Reducing in Taichi scope parallel...')
+print('Reducing in Taichi scope with a parallel kernel...')
 start = time.time()
-print(reduce_para(v1, v2))
+print(reduce_para())
 print(time.time() - start)
-ti.profiler.print_kernel_profiler_info('trace')
-ti.profiler.clear_kernel_profiler_info()
 
-
-print('Reducing in Taichi scope serial...')
+print('Reducing in Taichi scope with serial kernel...')
 start = time.time()
-print(reduce_seri(v1, v2))
+print(reduce_seri())
 print(time.time() - start)
-ti.profiler.print_kernel_profiler_info('trace')
-ti.profiler.clear_kernel_profiler_info()
