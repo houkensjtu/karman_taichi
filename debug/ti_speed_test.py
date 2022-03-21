@@ -3,7 +3,7 @@ import time
 
 ti.init(arch=ti.gpu, default_fp=ti.f32)
 
-n = 4096
+n = 8192
 v1 = ti.field(dtype=float, shape = n)
 v2 = ti.field(dtype=float, shape = n)
 
@@ -32,13 +32,17 @@ def reduce_seri()->ti.f32:
 
 print('Initializing...')
 init()
+reduce_para() # Skip the first run to avoid compilation time
+reduce_seri() # Skip the first run to avoid compilation time
 
 print('Reducing in Taichi scope with a parallel kernel...')
-start = time.time()
-print(reduce_para())
-print(time.time() - start)
+start = time.perf_counter()
+for _ in range(1000):
+    reduce_para()
+print(time.perf_counter() - start)
 
 print('Reducing in Taichi scope with serial kernel...')
-start = time.time()
-print(reduce_seri())
-print(time.time() - start)
+start = time.perf_counter()
+for _ in range(1000):
+    reduce_seri()
+print(time.perf_counter() - start)
