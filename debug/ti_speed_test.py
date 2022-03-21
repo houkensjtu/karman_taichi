@@ -1,9 +1,9 @@
 import taichi as ti
 import time
 
-ti.init(arch=ti.gpu, default_fp=ti.f32)
+ti.init(arch=ti.cpu, default_fp=ti.f32)
 
-n = 8192
+n = 8192 # n needs to be large enough for cpu to unleash its parallel power
 v1 = ti.field(dtype=float, shape = n)
 v2 = ti.field(dtype=float, shape = n)
 
@@ -17,6 +17,7 @@ def init():
 def reduce_para()->ti.f32:
     n = v1.shape[0]
     sum = 0.0
+    ti.block_dim(32) # larger block_dim leads to less overhead; default dim = 32
     for i in range(n):
         sum += v1[i]*v2[i]
     return sum
@@ -24,7 +25,8 @@ def reduce_para()->ti.f32:
 @ti.kernel
 def reduce_seri()->ti.f32:
     n = v1.shape[0]
-    sum = 0.0    
+    sum = 0.0
+    ti.block_dim(32)    
     for _ in range(1):
         for i in range(n):
             sum += v1[i]*v2[i]
