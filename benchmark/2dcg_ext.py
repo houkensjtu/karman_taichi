@@ -32,8 +32,9 @@ pixels = ti.field(dtype=real, shape=(N_gui, N_gui))  # image buffer
 
 ti.root.place(alpha, beta, sum)
 
-# ti.root.dense(ti.ij, N_tot).place(x, p, Ap, r, z, Ax, b) # Dense data structure
-ti.root.pointer(ti.ij, N_tot//16).dense(ti.ij, 16).place(x, p, Ap, r, Ax, b)
+ti.root.dense(ti.ij, (N_tot, N_tot)).place(x, p, Ap, r, Ax, b) # Dense data structure
+# ti.root.pointer(ti.ij, N_tot//16).dense(ti.ij, 16).place(x, p, Ap, r, Ax, b)
+print(x.shape)
 
 
 # -- Computation kernels --
@@ -60,7 +61,8 @@ def reduce(p: ti.template(), q: ti.template()):
 
 @ti.kernel
 def compute_Ap():
-    for i, j in Ap:
+    # for i, j in Ap:
+    for i, j in ti.ndrange((N_ext, N_tot-N_ext), (N_ext, N_tot-N_ext)):
         # A is implicitly expressed as a 2-D laplace operator
         # A = |4 -1 ... -1      ... ... |
         #     |-1 4 -1 ... -1      ...  |
@@ -75,7 +77,8 @@ def compute_Ap():
         
 @ti.kernel
 def compute_Ax():
-    for i, j in Ax:
+    # for i, j in Ax:
+    for i, j in ti.ndrange((N_ext, N_tot-N_ext), (N_ext, N_tot-N_ext)):        
         # A is implicitly expressed as a 2-D laplace operator
         Ax[i,j] = 4.0 * x[i,j] - x[i+1,j] - x[i-1,j] - x[i,j+1] - x[i,j-1]
 
@@ -145,9 +148,9 @@ for i in range(steps):
 
     # Visualizations
     print(f'Iter = {i:4}, Residual = {new_rTr:e}')
-    paint()
-    gui.set_image(pixels) # Visualize the solution: x
-    gui.show()
+    # paint()
+    # gui.set_image(pixels) # Visualize the solution: x
+    # gui.show()
 
 # -- Conjugate gradient main loop ends here --
 
@@ -158,8 +161,8 @@ for i in range(steps):
 #    im = plt.imshow(mat, cmap = 'bone')
 #    plt.colorbar(im)
 #    plt.show()
-# compute_Ax()
-# visual_matrix(Ax.to_numpy())
-# visual_matrix(b.to_numpy())
+compute_Ax()
+print('Checking solution in numpy...')
+print(np.allclose(Ax.to_numpy(), b.to_numpy()))
 
-ti.print_kernel_profile_info()
+ti.profiler.print_kernel_profiler_info()
