@@ -6,12 +6,12 @@ import numpy as np
 import taichi as ti
 
 # -- Taichi initialization --
-real = ti.f32
-ti.init(default_fp=real, arch=ti.cpu, kernel_profiler=True)
+real = ti.f64 # Use ti.f32 to accelerate CUDA operations, but might lead to bigger residual
+ti.init(default_fp=real, arch=ti.gpu, kernel_profiler=True)
 
 
 # -- Grid parameters --
-N = 128
+N = 512
 N_tot = 2 * N
 N_ext = N // 2
 N_gui = 512
@@ -32,9 +32,8 @@ pixels = ti.field(dtype=real, shape=(N_gui, N_gui))  # image buffer
 
 ti.root.place(alpha, beta, sum)
 
-ti.root.dense(ti.ij, (N_tot, N_tot)).place(x, p, Ap, r, Ax, b) # Dense data structure
-# ti.root.pointer(ti.ij, N_tot//16).dense(ti.ij, 16).place(x, p, Ap, r, Ax, b)
-print(x.shape)
+# ti.root.dense(ti.ij, (N_tot, N_tot)).place(x, p, Ap, r, Ax, b) # Dense data structure
+ti.root.pointer(ti.ij, N_tot//16).dense(ti.ij, 16).place(x, p, Ap, r, Ax, b)
 
 
 # -- Computation kernels --
@@ -61,7 +60,6 @@ def reduce(p: ti.template(), q: ti.template()):
 
 @ti.kernel
 def compute_Ap():
-    # for i, j in Ap:
     for i, j in ti.ndrange((N_ext, N_tot-N_ext), (N_ext, N_tot-N_ext)):
         # A is implicitly expressed as a 2-D laplace operator
         # A = |4 -1 ... -1      ... ... |
@@ -73,6 +71,13 @@ def compute_Ap():
         #     |          ...     -1 4 -1|
         #     |                     -1 4|
         Ap[i,j] = 4.0 * p[i,j] - p[i+1,j] - p[i-1,j] - p[i,j+1] - p[i,j-1]
+
+
+@ti.kernel
+def compute_Ap_serial():
+    for k in range(1):
+        for i, j in ti.ndrange((N_ext, N_tot-N_ext), (N_ext, N_tot-N_ext)):
+            Ap[i,j] = 4.0 * p[i,j] - p[i+1,j] - p[i-1,j] - p[i,j+1] - p[i,j-1]
 
         
 @ti.kernel
@@ -107,6 +112,19 @@ def paint():
         ii = int(i * N / N_gui) + N_ext
         jj = int(j * N / N_gui) + N_ext
         pixels[i, j] = x[ii, jj] / N_tot
+
+
+@ti.kernel
+def check_solution():
+    passed = True
+    print('>>> Checking the residual using custom routine...')
+    for i, j in r:
+        r[i,j] = Ax[i,j] - b[i,j]
+        if ti.abs(r[i,j]) > 1e-3:
+            print('>>> Diff > 1e-3 detected at', i, j, r[i,j])
+            passed = False
+    print(f'>>> Is Ax close enough to b? (custom): {passed}')
+
         
 gui = ti.GUI("cg solution", res=(N_gui, N_gui))
 
@@ -122,6 +140,7 @@ update_p() # Initial p = r + beta * p ( beta = 0 )
 for i in range(steps):
     # 1. Compute alpha
     compute_Ap()
+    # compute_Ap_serial() # Switch to serial version
     sum[None] = 0.0
     reduce(p, Ap)
     pAp = sum[None]
@@ -135,8 +154,8 @@ for i in range(steps):
     sum[None] = 0.0
     reduce(r, r)
     new_rTr = sum[None]
-    if new_rTr < initial_rTr * 1.0e-12:
-        print('Converged')
+    if new_rTr < initial_rTr * 1.0e-20:
+        print('>>> Conjugate Gradient method converged.')
         break
 
     # 4. Compute beta
@@ -154,15 +173,16 @@ for i in range(steps):
 
 # -- Conjugate gradient main loop ends here --
 
-# -- For visualizing the data with colorbar -- 
-#def visual_matrix(mat):
-#    import matplotlib.pyplot as plt
-#    import matplotlib.cm as cm    
-#    im = plt.imshow(mat, cmap = 'bone')
-#    plt.colorbar(im)
-#    plt.show()
+
+# -- Checking solutions --
 compute_Ax()
-print('Checking solution in numpy...')
-print(np.allclose(Ax.to_numpy(), b.to_numpy()))
+
+check_solution()
+print('>>> Checking the residual using numpy...')
+print('>>> Is Ax close enough to b? (numpy) :', np.allclose(Ax.to_numpy(), b.to_numpy()))
+
+# Save Ax and b for debugging purpose
+# np.savetxt('Ax.csv', Ax.to_numpy(), delimiter=',')
+# np.savetxt('b.csv', b.to_numpy(), delimiter=',')
 
 ti.profiler.print_kernel_profiler_info()
