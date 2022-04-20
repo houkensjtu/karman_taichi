@@ -7,7 +7,7 @@ import taichi as ti
 
 # -- Taichi initialization --
 real = ti.f64 # Use ti.f32 to accelerate CUDA operations, but might lead to bigger residual
-ti.init(default_fp=real, arch=ti.gpu, kernel_profiler=True)
+ti.init(default_fp=real, arch=ti.cpu, kernel_profiler=True)
 
 
 # -- Grid parameters --
@@ -58,6 +58,31 @@ def reduce(p: ti.template(), q: ti.template()):
         sum[None] += p[I] * q[I]
 
 
+@ti.func
+def ae(i, j):
+    return 1.0
+
+
+@ti.func
+def aw(i, j):
+    return 1.0
+
+
+@ti.func
+def an(i, j):
+    return 1.0
+
+
+@ti.func
+def aS(i, j):
+    return 1.0
+
+
+@ti.func
+def ap(i, j):
+    return ae(i,j) + aw(i,j) + an(i,j) + aS(i, j)
+    
+
 @ti.kernel
 def compute_Ap():
     for i, j in ti.ndrange((N_ext, N_tot-N_ext), (N_ext, N_tot-N_ext)):
@@ -72,6 +97,16 @@ def compute_Ap():
         #     |                     -1 4|
         Ap[i,j] = 4.0 * p[i,j] - p[i+1,j] - p[i-1,j] - p[i,j+1] - p[i,j-1]
 
+
+@ti.kernel
+def compute_Ap_funk(): # Use @ti.func's to compute the coef of A in dot(A, p)
+    for i, j in ti.ndrange((N_ext, N_tot-N_ext), (N_ext, N_tot-N_ext)):
+        Ap[i,j] = ap(i,j) * p[i,j] \
+                  - ae(i,j) * p[i+1,j] \
+                  - aw(i,j) * p[i-1,j] \
+                  - an(i,j) * p[i,j+1] \
+                  - aS(i,j) * p[i,j-1]
+        
 
 @ti.kernel
 def compute_Ap_serial():
@@ -126,7 +161,7 @@ def check_solution():
     print(f'>>> Is Ax close enough to b? (custom): {passed}')
 
         
-gui = ti.GUI("cg solution", res=(N_gui, N_gui))
+# gui = ti.GUI("cg solution", res=(N_gui, N_gui))
 
 
 # -- Conjugate gradient starts here --
@@ -139,7 +174,8 @@ update_p() # Initial p = r + beta * p ( beta = 0 )
 # -- Main loop -- 
 for i in range(steps):
     # 1. Compute alpha
-    compute_Ap()
+    compute_Ap_funk()
+    # compute_Ap()        # Switch to constant version
     # compute_Ap_serial() # Switch to serial version
     sum[None] = 0.0
     reduce(p, Ap)
