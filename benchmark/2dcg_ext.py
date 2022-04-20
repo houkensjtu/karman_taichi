@@ -6,7 +6,7 @@ import numpy as np
 import taichi as ti
 
 # -- Taichi initialization --
-real = ti.f64 # Use ti.f32 to accelerate CUDA operations, but might lead to bigger residual
+real = ti.f64 # Use ti.f32 to accelerate CUDA operations, but might lead to longer convergence
 ti.init(default_fp=real, arch=ti.cpu, kernel_profiler=True)
 
 
@@ -202,7 +202,7 @@ for i in range(steps):
     old_rTr = new_rTr
 
     # Visualizations
-    print(f'Iter = {i:4}, Residual = {new_rTr:e}')
+    # print(f'Iter = {i:4}, Residual = {new_rTr:e}') # Turn off residual display for perf testing.
     # paint()
     # gui.set_image(pixels) # Visualize the solution: x
     # gui.show()
