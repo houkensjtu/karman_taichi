@@ -1,0 +1,115 @@
+import taichi as ti
+import numpy as np
+
+
+@ti.data_oriented
+class CGSolver:
+    def __init__(self, n, eps):
+        self.N = n
+        real = ti.f64
+        self.eps = eps
+        self.N_tot = 2 * self.N
+        self.N_ext = self.N // 2
+        self.steps = self.N * self.N # Cg should converge within the size of the vector
+
+        # -- Conjugate gradient variables -- 
+        self.r = ti.field(dtype=real) # residual
+        self.b = ti.field(dtype=real) # residual
+        self.x = ti.field(dtype=real) # solution
+        self.p = ti.field(dtype=real) # conjugate gradient
+        self.Ap = ti.field(dtype=real)# matrix-vector product
+        self.Ax = ti.field(dtype=real)# matrix-vector product
+        self.alpha = ti.field(dtype=real)  # step size
+        self.beta = ti.field(dtype=real)  # step size
+        self.sum = ti.field(dtype=real)  # storage for reductions
+        ti.root.place(self.alpha, self.beta, self.sum)
+
+        # ti.root.dense(ti.ij, (N_tot, N_tot)).place(x, p, Ap, r, Ax, b) # Dense data structure
+        ti.root.pointer(ti.ij, self.N_tot//16).dense(ti.ij, 16).place(self.x,
+                                                                      self.p,
+                                                                      self.Ap,
+                                                                      self.r,
+                                                                      self.Ax,
+                                                                      self.b)
+        
+    @ti.kernel
+    def init(self):
+        for i, j in ti.ndrange((self.N_ext, self.N_tot-self.N_ext), (self.N_ext, self.N_tot-self.N_ext)):
+            # xl, yl, zl = [0,1]        
+            xl = (i - self.N_ext) * 2.0 / self.N_tot
+            yl = (j - self.N_ext) * 2.0 / self.N_tot
+            # r[0] = b - Ax, where x = 0; therefore r[0] = b
+            self.r[i, j] = ti.sin(2.0 * np.pi * xl) * ti.sin(2.0 * np.pi * yl)
+            self.b[i, j] = ti.sin(2.0 * np.pi * xl) * ti.sin(2.0 * np.pi * yl)
+            self.Ap[i, j] = 0.0
+            self.Ax[i, j] = 0.0
+            self.p[i, j] = 0.0
+
+    @ti.kernel
+    def reduce(self, p: ti.template(), q: ti.template()):
+        for I in ti.grouped(p):
+            self.sum[None] += p[I] * q[I]
+
+    @ti.kernel
+    def compute_Ap(self):
+        for i, j in ti.ndrange((self.N_ext, self.N_tot-self.N_ext), (self.N_ext, self.N_tot-self.N_ext)):                    self.Ap[i,j] = 4.0 * self.p[i,j] - self.p[i+1,j] - self.p[i-1,j] - self.p[i,j+1] - self.p[i,j-1]
+            
+    @ti.kernel
+    def update_x(self):
+        for I in ti.grouped(self.p):
+            self.x[I] += self.alpha[None] * self.p[I]
+
+
+    @ti.kernel
+    def update_r(self):
+        for I in ti.grouped(self.p):
+            self.r[I] -= self.alpha[None] * self.Ap[I]
+
+
+    @ti.kernel
+    def update_p(self):
+        for I in ti.grouped(self.p):
+            self.p[I] = self.r[I] + self.beta[None] * self.p[I]
+            
+
+    def solve(self):
+        print('Start solving')
+        self.init()
+        self.sum[None] = 0.0
+        self.reduce(self.r, self.r)
+        initial_rTr = self.sum[None] # Compute initial residual
+        old_rTr = initial_rTr
+        self.update_p() # Initial p = r + beta * p ( beta = 0 )
+        print('Finished solving')
+
+        # -- Main loop -- 
+        for i in range(self.steps):
+            # 1. Compute alpha
+            self.compute_Ap()
+            self.sum[None] = 0.0
+            self.reduce(self.p, self.Ap)
+            pAp = self.sum[None]
+            self.alpha[None] = old_rTr / pAp
+
+            # 2. Update x and r using alpha
+            self.update_x()
+            self.update_r()
+
+            # 3. Check for convergence
+            self.sum[None] = 0.0
+            self.reduce(self.r, self.r)
+            new_rTr = self.sum[None]
+            if new_rTr < initial_rTr * self.eps:
+                print('>>> Conjugate Gradient method converged.')
+                break
+
+            # 4. Compute beta
+            self.beta[None] = new_rTr / old_rTr
+    
+            # 5. Update p using beta
+            self.update_p()
+            old_rTr = new_rTr
+
+            # Visualizations
+            print(f'Iter = {i:4}, Residual = {new_rTr:e}') # Turn off residual display for perf testing.
+        
