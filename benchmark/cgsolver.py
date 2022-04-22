@@ -4,14 +4,14 @@ import numpy as np
 
 @ti.data_oriented
 class CGSolver:
-    def __init__(self, n, eps):
+    def __init__(self, n=256, eps=1e-16, quiet=False):
         self.N = n
         real = ti.f64
         self.eps = eps
         self.N_tot = 2 * self.N
         self.N_ext = self.N // 2
         self.steps = self.N * self.N # Cg should converge within the size of the vector
-
+        self.quiet = quiet
         # -- Conjugate gradient variables -- 
         self.r = ti.field(dtype=real) # residual
         self.b = ti.field(dtype=real) # residual
@@ -93,5 +93,53 @@ class CGSolver:
             self.update_p()
             old_rTr = new_rTr
             # Visualizations
-            print(f'Iter = {i:4}, Residual = {new_rTr:e}') # Turn off residual display for perf testing.
+            if not self.quiet:
+                print(f'Iter = {i:4}, Residual = {new_rTr:e}') # Turn off residual display for perf testing.
+
+    def build_ASparse(self):
+        n = self.N * self.N
+        k = ti.linalg.SparseMatrixBuilder(n,n,max_num_triplets=5*n) # Create the builder
+        @ti.kernel
+        def fill(A: ti.types.sparse_matrix_builder()): # Fill the builder with data
+            for i in range(n):
+                A[i, i] += 4.0
+                if i-1 >= 0 and i%self.N !=0:
+                    A[i, i-1] -= 1.0
+                if i-self.N >= 0:
+                    A[i, i-self.N] -= 1.0
+                if i+1 < n and i%self.N!=self.N-1:
+                    A[i, i+1] -= 1.0
+                if i+self.N < n:
+                    A[i, i+self.N] -= 1.0
+        fill(k)
+        A = k.build() # Build the matrix using the builder
+        return A
+    
+    def build_A(self):
+        n = self.N * self.N
+        A = 4.0 * np.identity(n)
+        for i in range(n):
+            if i-1 >= 0 and i%self.N!=0:
+                A[i, i-1] = -1.0
+            if i-self.N >= 0:
+                A[i, i-self.N] = -1.0
+            if i+1 < n and i%self.N!=self.N-1:
+                A[i, i+1] = -1.0
+            if i+self.N < n:
+                A[i, i+self.N] = -1.0
+        np.savetxt('A.csv', A, delimiter=',')
+        return A
+
+    def build_b(self):
+        bnp = self.b.to_numpy() # Convert to numpy ndarray
+        bsp = bnp[self.N_ext:self.N_tot-self.N_ext, self.N_ext:self.N_tot-self.N_ext] # Slicing
+        b = bsp.flatten(order='C') # Flatten the array to a 1D vector
+        np.savetxt('b.csv', b, delimiter=',')        
+        return b
         
+    def build_x(self):
+        xnp = self.x.to_numpy() # Convert to numpy ndarray
+        xsp = xnp[self.N_ext:self.N_tot-self.N_ext, self.N_ext:self.N_tot-self.N_ext] # Slicing
+        x = xsp.flatten(order='C') # Flatten the array to a 1D vector
+        np.savetxt('x.csv', x, delimiter=',')
+        return x
