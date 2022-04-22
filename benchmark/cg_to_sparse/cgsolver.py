@@ -96,6 +96,7 @@ class CGSolver:
             if not self.quiet:
                 print(f'Iter = {i:4}, Residual = {new_rTr:e}') # Turn off residual display for perf testing.
 
+    # Build lfs of the equation using SparseMatrixBuilder
     def build_ASparse(self):
         n = self.N * self.N
         k = ti.linalg.SparseMatrixBuilder(n,n,max_num_triplets=5*n) # Create the builder
@@ -114,7 +115,8 @@ class CGSolver:
         fill(k)
         A = k.build() # Build the matrix using the builder
         return A
-    
+
+    # Build lfs of the matrix using Numpy (Slow!)
     def build_A(self):
         n = self.N * self.N
         A = 4.0 * np.identity(n)
