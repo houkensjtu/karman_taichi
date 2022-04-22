@@ -35,8 +35,7 @@ class SparsePoissonSolver:
             yl = j / self.N
             b[i, j] = ti.sin(2.0 * np.pi * xl) * ti.sin(2.0 * np.pi * yl)
         b = b.flatten(order='C')
-        np.savetxt('b.csv', b, delimiter=',')
-        return b.flatten(order='C')
+        return b
 
     def solve(self):
         asp = self.build_ASparse()
