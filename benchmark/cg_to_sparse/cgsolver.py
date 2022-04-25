@@ -3,7 +3,7 @@ import numpy as np
 
 
 @ti.data_oriented
-class CGSolver:
+class CGPoissonSolver:
     def __init__(self, n=256, eps=1e-16, quiet=False):
         self.N = n
         real = ti.f64
@@ -52,6 +52,11 @@ class CGSolver:
     def compute_Ap(self):
         for i, j in ti.ndrange((self.N_ext, self.N_tot-self.N_ext), (self.N_ext, self.N_tot-self.N_ext)):
             self.Ap[i,j] = 4.0 * self.p[i,j] - self.p[i+1,j] - self.p[i-1,j] - self.p[i,j+1] - self.p[i,j-1]
+
+    @ti.kernel
+    def compute_Ax(self):
+        for i, j in ti.ndrange((self.N_ext, self.N_tot-self.N_ext), (self.N_ext, self.N_tot-self.N_ext)):
+            self.Ax[i,j] = 4.0 * self.x[i,j] - self.x[i+1,j] - self.x[i-1,j] - self.x[i,j+1] - self.x[i,j-1]
             
     @ti.kernel
     def update_x(self):
@@ -95,6 +100,17 @@ class CGSolver:
             # Visualizations
             if not self.quiet:
                 print(f'Iter = {i:4}, Residual = {new_rTr:e}') # Turn off residual display for perf testing.
+
+    @ti.kernel
+    def compute_residual(self): # compute r = Ax - b
+        #for i,j in self.b:
+        #    self.r[i,j] = self.b[i,j] - self.Ax[i,j]
+        for I in ti.grouped(self.b):
+            self.r[I] = self.b[I] - self.Ax[I]
+        
+    def check_solution(self):   # Return the norm of rTr as the residual
+        self.compute_Ax()
+        return np.sqrt(self.reduce(self.r, self.r))
 
     # Build lfs of the matrix using Numpy (Slow!)
     def build_A(self):

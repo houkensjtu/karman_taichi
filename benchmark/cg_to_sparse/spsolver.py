@@ -3,6 +3,7 @@ import numpy as np
 
 ti.init(arch=ti.cpu)
 
+@ti.data_oriented
 class SparsePoissonSolver:
     def __init__(self, n=128, solver_type='LU'):
         self.N = n
