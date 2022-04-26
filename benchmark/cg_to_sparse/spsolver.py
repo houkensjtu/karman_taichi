@@ -7,45 +7,45 @@ ti.init(arch=ti.cpu)
 class SparsePoissonSolver:
     def __init__(self, n=128, solver_type='LU'):
         self.N = n
+        self.NN = n * n
         self.solver_type = solver_type
-        
+        self.builder = ti.linalg.SparseMatrixBuilder(self.NN,self.NN,max_num_triplets=5*self.NN) # Create the builder        
+
     # Build lfs of the equation using SparseMatrixBuilder
     def build_ASparse(self):
-        n = self.N * self.N
-        k = ti.linalg.SparseMatrixBuilder(n,n,max_num_triplets=5*n) # Create the builder
         @ti.kernel
         def fill(A: ti.types.sparse_matrix_builder()): # Fill the builder with data
-            for i in range(n):
+            for i in range(self.NN):
                 A[i, i] += 4.0
                 if i-1 >= 0 and i%self.N !=0:
                     A[i, i-1] -= 1.0
                 if i-self.N >= 0:
                     A[i, i-self.N] -= 1.0
-                if i+1 < n and i%self.N!=self.N-1:
+                if i+1 < self.NN and i%self.N!=self.N-1:
                     A[i, i+1] -= 1.0
-                if i+self.N < n:
+                if i+self.N < self.NN:
                     A[i, i+self.N] -= 1.0
-        fill(k)
-        A = k.build() # Build the matrix using the builder
-        return A
+        fill(self.builder)
+        self.a = self.builder.build() # Build the matrix using the builder
 
     def build_b(self):
-        b = np.zeros(shape=(self.N,self.N))
+        self.b = np.zeros(shape=(self.N,self.N))
         for i,j in np.ndindex(self.N, self.N):
             xl = i / self.N
             yl = j / self.N
-            b[i, j] = ti.sin(2.0 * np.pi * xl) * ti.sin(2.0 * np.pi * yl)
-        b = b.flatten(order='C')
-        return b
+            self.b[i, j] = ti.sin(2.0 * np.pi * xl) * ti.sin(2.0 * np.pi * yl)
+        self.b = self.b.flatten(order='C')
 
     def solve(self):
-        asp = self.build_ASparse()
+        self.build_ASparse()
         solver = ti.linalg.SparseSolver(solver_type=self.solver_type)
-        solver.analyze_pattern(asp)
-        solver.factorize(asp)
-        b = self.build_b()
-        return solver.solve(b)
+        solver.analyze_pattern(self.a)
+        solver.factorize(self.a)
+        self.build_b()
+        self.x = solver.solve(self.b)
 
+    def check_solution(self):
+        return np.linalg.norm(self.a @ self.x - self.b)
 
 sp = SparsePoissonSolver()
 sp.solve()
