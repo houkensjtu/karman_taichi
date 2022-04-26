@@ -9,7 +9,7 @@ ti.init(arch=ti.x64)
 
 # Solve a 128x128 2-D Poisson Equation
 # There are 128^2 unknowns in total
-psize = 128
+psize = 256
 
 # Solve in Taichi using custom CG
 # A is implicitly represented in compute_Ap()
@@ -22,7 +22,7 @@ print('>>> Time spent using CGPoissonSolver:', time.time() - now, 'sec')
 # Solve in Taichi using custom BICG
 now = time.time()
 print('>>> Solving using BICGPoissonSolver...')
-bicgsolver = BICGPoissonSolver(psize, 1e-16, quiet=True)
+bicgsolver = BICGPoissonSolver(psize, 1e-16, quiet=False)
 bicgsolver.solve()
 print('>>> Time spent using BICGPoissonSolver:', time.time() - now, 'sec')
 
