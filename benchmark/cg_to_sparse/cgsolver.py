@@ -109,8 +109,9 @@ class CGPoissonSolver:
             self.r[I] = self.b[I] - self.Ax[I]
         
     def check_solution(self):   # Return the norm of rTr as the residual
-        self.compute_Ax()
-        return np.sqrt(self.reduce(self.r, self.r))
+        # self.compute_Ax()
+        # self.compute_residual()
+        return np.sqrt(self.reduce(self.r, self.r)) # TODO: Is this equal to compute_residual()?
 
     # Build lfs of the matrix using Numpy (Slow!)
     def build_A(self):
