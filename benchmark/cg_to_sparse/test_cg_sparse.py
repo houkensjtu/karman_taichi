@@ -1,4 +1,4 @@
-from cgsolver import CGPoissonSolver
+from cgsolver import CGPoissonSolver, CGPoissonSolverYM
 from spsolver import SparsePoissonSolver
 import taichi as ti
 import numpy as np
@@ -17,6 +17,13 @@ print('Solving using CGPoissonSolver...')
 solver = CGPoissonSolver(psize, 1e-16, quiet=True) # quiet=False to print residual
 solver.solve()
 print('>>> Time spent using CG:', time.time() - now, 'sec')
+
+# Solve in Taichi using custom CG (YM version with global sum[None])
+now = time.time()
+print('Solving using CGPoissonSolverYM...')
+ymsolver = CGPoissonSolverYM(psize, 1e-16, quiet=True) # quiet=False to print residual
+ymsolver.solve()
+print('>>> Time spent using CGYM:', time.time() - now, 'sec')
 
 # Solve in Taichi using SparseMatrixSolver
 now = time.time()

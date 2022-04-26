@@ -6,21 +6,21 @@ import numpy as np
 class CGPoissonSolver:
     def __init__(self, n=256, eps=1e-16, quiet=False):
         self.N = n
-        real = ti.f64
+        self.real = ti.f64
         self.eps = eps
         self.N_tot = 2 * self.N
         self.N_ext = self.N // 2
         self.steps = self.N * self.N # Cg should converge within the size of the vector
         self.quiet = quiet
         # -- Conjugate gradient variables -- 
-        self.r = ti.field(dtype=real) # residual
-        self.b = ti.field(dtype=real) # residual
-        self.x = ti.field(dtype=real) # solution
-        self.p = ti.field(dtype=real) # conjugate gradient
-        self.Ap = ti.field(dtype=real)# matrix-vector product
-        self.Ax = ti.field(dtype=real)# matrix-vector product
-        self.alpha = ti.field(dtype=real)  # step size
-        self.beta = ti.field(dtype=real)  # step size
+        self.r = ti.field(dtype=self.real) # residual
+        self.b = ti.field(dtype=self.real) # residual
+        self.x = ti.field(dtype=self.real) # solution
+        self.p = ti.field(dtype=self.real) # conjugate gradient
+        self.Ap = ti.field(dtype=self.real)# matrix-vector product
+        self.Ax = ti.field(dtype=self.real)# matrix-vector product
+        self.alpha = ti.field(dtype=self.real)  # step size
+        self.beta = ti.field(dtype=self.real)  # step size
         ti.root.place(self.alpha, self.beta) # , self.sum)
 
         # ti.root.dense(ti.ij, (N_tot, N_tot)).place(x, p, Ap, r, Ax, b) # Dense data structure
@@ -141,3 +141,13 @@ class CGPoissonSolver:
         x = xsp.flatten(order='C') # Flatten the array to a 1D vector
         # np.savetxt('x.csv', x, delimiter=',') # For debugging purpose
         return x
+
+
+@ti.data_oriented
+class CGPoissonSolverYM(CGPoissonSolver):
+    def __init__(self, n, eps, quiet):
+        super().__init__(n, eps, quiet)
+        self.sum = ti.field(dtype=self.real, shape=())
+
+
+
