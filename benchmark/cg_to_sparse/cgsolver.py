@@ -149,5 +149,48 @@ class CGPoissonSolverYM(CGPoissonSolver):
         super().__init__(n, eps, quiet)
         self.sum = ti.field(dtype=self.real, shape=())
 
+    @ti.kernel
+    def reduce(self, p: ti.template(), q: ti.template()):
+        for I in ti.grouped(p):
+            self.sum[None] += p[I] * q[I]
 
-
+    def solve(self):
+        self.init()
+        self.sum[None] = 0.0
+        self.reduce(self.r, self.r) # Compute initial residual
+        initial_rTr = self.sum[None]
+        old_rTr = initial_rTr
+        self.update_p() # Initial p = r + beta * p ( beta = 0 )
+        # -- Main loop -- 
+        for i in range(self.steps):
+            # 1. Compute alpha
+            self.compute_Ap()
+            self.sum[None] = 0.0
+            self.reduce(self.p, self.Ap)
+            pAp = self.sum[None]
+            self.alpha[None] = old_rTr / pAp
+            # 2. Update x and r using alpha
+            self.update_x()
+            self.update_r()
+            # 3. Check for convergence
+            self.sum[None] = 0.0
+            self.reduce(self.r, self.r)
+            new_rTr = self.sum[None]
+            if new_rTr < initial_rTr * self.eps:
+                print('>>> Conjugate Gradient method converged.')
+                break
+            # 4. Compute beta
+            self.beta[None] = new_rTr / old_rTr
+            # 5. Update p using beta
+            self.update_p()
+            old_rTr = new_rTr
+            # Visualizations
+            if not self.quiet:
+                print(f'Iter = {i:4}, Residual = {new_rTr:e}') # Turn off residual display for perf testing.
+            
+    def check_solution(self):   # Return the norm of rTr as the residual
+        self.compute_Ax()
+        self.sum[None] = 0.0
+        self.reduce(self.r, self.r)
+        res = self.sum[None]
+        return np.sqrt(res)
