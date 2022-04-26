@@ -1,4 +1,5 @@
-from cgsolver import CGPoissonSolver, CGPoissonSolverYM
+from cgsolver import CGPoissonSolver
+from bicgsolver import BICGPoissonSolver
 from spsolver import SparsePoissonSolver
 import taichi as ti
 import numpy as np
@@ -14,9 +15,16 @@ psize = 128
 # A is implicitly represented in compute_Ap()
 now = time.time()
 print('>>> Solving using CGPoissonSolver...')
-solver = CGPoissonSolver(psize, 1e-16, quiet=True) # quiet=False to print residual
-solver.solve()
+cgsolver = CGPoissonSolver(psize, 1e-16, quiet=True) # quiet=False to print residual
+cgsolver.solve()
 print('>>> Time spent using CGPoissonSolver:', time.time() - now, 'sec')
+
+# Solve in Taichi using custom BICG
+now = time.time()
+print('>>> Solving using BICGPoissonSolver...')
+bicgsolver = BICGPoissonSolver(psize, 1e-16, quiet=True)
+bicgsolver.solve()
+print('>>> Time spent using BICGPoissonSolver:', time.time() - now, 'sec')
 
 # Solve in Taichi using SparseMatrixSolver
 now = time.time()
@@ -27,5 +35,6 @@ print('>>> Time spent using SparseMatrixSolver:', time.time() - now, 'sec')
 
 # Compare the residuals: norm(r) where r = Ax - b
 print('>>> Comparing the residual norm(Ax-b)...')
-print('>>> Residual CGPoissonSolver:', solver.check_solution())
+print('>>> Residual CGPoissonSolver:', cgsolver.check_solution())
+print('>>> Residual BICGPoissonSolver:', bicgsolver.check_solution())
 print('>>> Residual SparsePoissonSolver:', spsolver.check_solution())
