@@ -5,9 +5,10 @@ ti.init(arch=ti.cpu)
 
 @ti.data_oriented
 class SparsePoissonSolver:
-    def __init__(self, n=128, solver_type='LU'):
+    def __init__(self, n=128, offset=0.1, solver_type='LU'):
         self.N = n
         self.NN = n * n
+        self.offset = 0.1
         self.solver_type = solver_type
         self.builder = ti.linalg.SparseMatrixBuilder(self.NN,self.NN,max_num_triplets=5*self.NN) # Create the builder        
 
@@ -16,7 +17,7 @@ class SparsePoissonSolver:
         @ti.kernel
         def fill(A: ti.types.sparse_matrix_builder()): # Fill the builder with data
             for i in range(self.NN):
-                A[i, i] += 4.0
+                A[i, i] += (4.0 + self.offset)
                 if i-1 >= 0 and i%self.N !=0:
                     A[i, i-1] -= 1.0
                 if i-self.N >= 0:

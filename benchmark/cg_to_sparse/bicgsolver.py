@@ -4,8 +4,8 @@ from cgsolver import CGPoissonSolver
 
 @ti.data_oriented
 class BICGPoissonSolver(CGPoissonSolver):
-    def __init__(self, n, eps, quiet):
-        super().__init__(n, eps, quiet)
+    def __init__(self, n, eps, offset, quiet):
+        super().__init__(n, eps, offset, quiet)
         self.r_tld = ti.field(dtype=self.real)
         self.p_hat = ti.field(dtype=self.real)
         self.s = ti.field(dtype=self.real)
@@ -72,7 +72,7 @@ class BICGPoissonSolver(CGPoissonSolver):
     @ti.kernel
     def compute_As(self):
         for i, j in ti.ndrange((self.N_ext, self.N_tot-self.N_ext), (self.N_ext, self.N_tot-self.N_ext)):
-            self.Ashat[i,j] = 4.0 * self.s_hat[i,j] \
+            self.Ashat[i,j] = (4.0+self.offset) * self.s_hat[i,j] \
                               - self.s_hat[i+1,j] \
                               - self.s_hat[i-1,j] \
                               - self.s_hat[i,j+1] \
@@ -81,7 +81,7 @@ class BICGPoissonSolver(CGPoissonSolver):
     @ti.kernel
     def compute_Ap(self):
         for i, j in ti.ndrange((self.N_ext, self.N_tot-self.N_ext), (self.N_ext, self.N_tot-self.N_ext)):
-            self.Ap[i,j] = 4.0 * self.p_hat[i,j] \
+            self.Ap[i,j] = (4.0+self.offset) * self.p_hat[i,j] \
                               - self.p_hat[i+1,j] \
                               - self.p_hat[i-1,j] \
                               - self.p_hat[i,j+1] \

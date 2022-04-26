@@ -4,10 +4,11 @@ import numpy as np
 
 @ti.data_oriented
 class CGPoissonSolver:
-    def __init__(self, n=256, eps=1e-16, quiet=False):
+    def __init__(self, n=256, eps=1e-16, offset=0.1, quiet=False):
         self.N = n
         self.real = ti.f64
         self.eps = eps
+        self.offset = offset
         self.N_tot = 2 * self.N
         self.N_ext = self.N // 2
         self.steps = self.N * self.N # Cg should converge within the size of the vector
@@ -51,12 +52,12 @@ class CGPoissonSolver:
     @ti.kernel
     def compute_Ap(self):
         for i, j in ti.ndrange((self.N_ext, self.N_tot-self.N_ext), (self.N_ext, self.N_tot-self.N_ext)):
-            self.Ap[i,j] = 4.0 * self.p[i,j] - self.p[i+1,j] - self.p[i-1,j] - self.p[i,j+1] - self.p[i,j-1]
+            self.Ap[i,j] = (4.0+self.offset) * self.p[i,j] - self.p[i+1,j] - self.p[i-1,j] - self.p[i,j+1] - self.p[i,j-1]
 
     @ti.kernel
     def compute_Ax(self):
         for i, j in ti.ndrange((self.N_ext, self.N_tot-self.N_ext), (self.N_ext, self.N_tot-self.N_ext)):
-            self.Ax[i,j] = 4.0 * self.x[i,j] - self.x[i+1,j] - self.x[i-1,j] - self.x[i,j+1] - self.x[i,j-1]
+            self.Ax[i,j] = (4.0+self.offset) * self.x[i,j] - self.x[i+1,j] - self.x[i-1,j] - self.x[i,j+1] - self.x[i,j-1]
             
     @ti.kernel
     def update_x(self):
@@ -116,7 +117,7 @@ class CGPoissonSolver:
     # Build lfs of the matrix using Numpy (Slow!)
     def build_A(self):
         n = self.N * self.N
-        A = 4.0 * np.identity(n)
+        A = 4.0 * np.identity(n) + self.offset
         for i in range(n):
             if i-1 >= 0 and i%self.N!=0:
                 A[i, i-1] = -1.0
@@ -126,28 +127,28 @@ class CGPoissonSolver:
                 A[i, i+1] = -1.0
             if i+self.N < n:
                 A[i, i+self.N] = -1.0
-        # np.savetxt('A.csv', A, delimiter=',') # For debugging purpose
+        np.savetxt('A.csv', A, delimiter=',') # For debugging purpose
         return A
 
     def build_b(self):
         bnp = self.b.to_numpy() # Convert to numpy ndarray
         bsp = bnp[self.N_ext:self.N_tot-self.N_ext, self.N_ext:self.N_tot-self.N_ext] # Slicing
         b = bsp.flatten(order='C') # Flatten the array to a 1D vector
-        # np.savetxt('b.csv', b, delimiter=',') # For debugging purpose
+        np.savetxt('b.csv', b, delimiter=',') # For debugging purpose
         return b
         
     def build_x(self):
         xnp = self.x.to_numpy() # Convert to numpy ndarray
         xsp = xnp[self.N_ext:self.N_tot-self.N_ext, self.N_ext:self.N_tot-self.N_ext] # Slicing
         x = xsp.flatten(order='C') # Flatten the array to a 1D vector
-        # np.savetxt('x.csv', x, delimiter=',') # For debugging purpose
+        np.savetxt('x.csv', x, delimiter=',') # For debugging purpose
         return x
 
 
 @ti.data_oriented
 class CGPoissonSolverYM(CGPoissonSolver): # YM's CGSolver version; featuring a global sum[None] to store results.
-    def __init__(self, n, eps, quiet):
-        super().__init__(n, eps, quiet)
+    def __init__(self, n, eps, offset, quiet):
+        super().__init__(n, eps, offset, quiet)
         self.sum = ti.field(dtype=self.real, shape=()) # The global field 'sum' to store results from reduce().
 
     @ti.kernel
