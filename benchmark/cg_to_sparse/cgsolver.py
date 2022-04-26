@@ -144,17 +144,17 @@ class CGPoissonSolver:
 
 
 @ti.data_oriented
-class CGPoissonSolverYM(CGPoissonSolver):
+class CGPoissonSolverYM(CGPoissonSolver): # YM's CGSolver version; featuring a global sum[None] to store results.
     def __init__(self, n, eps, quiet):
         super().__init__(n, eps, quiet)
-        self.sum = ti.field(dtype=self.real, shape=())
+        self.sum = ti.field(dtype=self.real, shape=()) # The global field 'sum' to store results from reduce().
 
     @ti.kernel
     def reduce(self, p: ti.template(), q: ti.template()):
         for I in ti.grouped(p):
             self.sum[None] += p[I] * q[I]
 
-    def solve(self):
+    def solve(self):  # Test results showed that the solving speed was similar to the original version.
         self.init()
         self.sum[None] = 0.0
         self.reduce(self.r, self.r) # Compute initial residual

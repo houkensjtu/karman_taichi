@@ -18,13 +18,6 @@ solver = CGPoissonSolver(psize, 1e-16, quiet=True) # quiet=False to print residu
 solver.solve()
 print('>>> Time spent using CG:', time.time() - now, 'sec')
 
-# Solve in Taichi using custom CG (YM version with global sum[None])
-now = time.time()
-print('Solving using CGPoissonSolverYM...')
-ymsolver = CGPoissonSolverYM(psize, 1e-16, quiet=True) # quiet=False to print residual
-ymsolver.solve()
-print('>>> Time spent using CGYM:', time.time() - now, 'sec')
-
 # Solve in Taichi using SparseMatrixSolver
 now = time.time()
 # print('Solving using SparseSolver...')
