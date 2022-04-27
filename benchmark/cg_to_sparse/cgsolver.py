@@ -127,7 +127,7 @@ class CGPoissonSolver:
     # Build lfs of the matrix using Numpy (Slow!)
     def build_A(self):
         n = self.N * self.N
-        A = 4.0 * np.identity(n) + self.offset
+        A = (4.0+self.offset) * np.identity(n)
         for i in range(n):
             if i-1 >= 0 and i%self.N!=0:
                 A[i, i-1] = -1.0
