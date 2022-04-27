@@ -5,7 +5,7 @@ import taichi as ti
 import numpy as np
 import time
 
-ti.init(arch=ti.x64)
+ti.init(arch=ti.cpu, default_fp=ti.f64)
 
 # Solve a 128x128 2-D Poisson Equation
 # There are 128^2 unknowns in total
@@ -16,14 +16,14 @@ offset = 0.1 # Offset the diagnoal of A matrix with amount = offset
 # A is implicitly represented in compute_Ap()
 now = time.time()
 print('>>> Solving using CGPoissonSolver...')
-cgsolver = CGPoissonSolver(psize, 1e-16, offset, quiet=False) # quiet=False to print residual
+cgsolver = CGPoissonSolver(psize, 1e-16, offset, quiet=True) # quiet=False to print residual
 cgsolver.solve()
 print('>>> Time spent using CGPoissonSolver:', time.time() - now, 'sec')
 
 # Solve in Taichi using custom BICG
 now = time.time()
 print('>>> Solving using BICGPoissonSolver...')
-bicgsolver = BICGPoissonSolver(psize, 1e-16, offset, quiet=False)
+bicgsolver = BICGPoissonSolver(psize, 1e-16, offset, quiet=True)
 bicgsolver.solve()
 print('>>> Time spent using BICGPoissonSolver:', time.time() - now, 'sec')
 
