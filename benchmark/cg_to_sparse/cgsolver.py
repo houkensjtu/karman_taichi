@@ -77,6 +77,7 @@ class CGPoissonSolver:
     def solve(self):
         self.init()
         initial_rTr = self.reduce(self.r, self.r) # Compute initial residual
+        print('Initial residual', ti.sqrt(initial_rTr))
         old_rTr = initial_rTr
         self.update_p() # Initial p = r + beta * p ( beta = 0 )
         # -- Main loop -- 
@@ -90,7 +91,7 @@ class CGPoissonSolver:
             self.update_r()
             # 3. Check for convergence
             new_rTr = self.reduce(self.r, self.r)
-            if new_rTr < initial_rTr * self.eps:
+            if ti.sqrt(new_rTr) < ti.sqrt(initial_rTr) * self.eps:
                 print('>>> Conjugate Gradient method converged.')
                 break
             # 4. Compute beta
@@ -100,7 +101,7 @@ class CGPoissonSolver:
             old_rTr = new_rTr
             # Visualizations
             if not self.quiet:
-                print(f'Iter = {i:4}, Residual = {new_rTr:e}') # Turn off residual display for perf testing.
+                print(f'Iter = {i:4}, Residual = {ti.sqrt(new_rTr):e}') # Turn off residual display for perf testing.
 
     @ti.kernel
     def compute_residual(self): # compute r = Ax - b
@@ -134,7 +135,7 @@ class CGPoissonSolver:
         bnp = self.b.to_numpy() # Convert to numpy ndarray
         bsp = bnp[self.N_ext:self.N_tot-self.N_ext, self.N_ext:self.N_tot-self.N_ext] # Slicing
         b = bsp.flatten(order='C') # Flatten the array to a 1D vector
-        np.savetxt('b.csv', b, delimiter=',') # For debugging purpose
+        np.savetxt('b.csv', b, delimiter=',', fmt='%50.42f') # For debugging purpose
         return b
         
     def build_x(self):

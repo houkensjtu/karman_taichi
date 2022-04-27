@@ -57,12 +57,14 @@ class BICGPoissonSolver(CGPoissonSolver):
     @ti.kernel
     def update_phat(self):
         for I in ti.grouped(self.p_hat):
-            self.p_hat[I] = 0.25 * self.p[I]
+            self.p_hat[I] = 1.0 / (4.0 + self.offset) * self.p[I]
+            # self.p_hat[I] = self.p[I]            
 
     @ti.kernel
     def update_shat(self):
         for I in ti.grouped(self.s_hat):
-            self.s_hat[I] = 0.25 * self.s[I]
+            self.s_hat[I] = 1.0 / (4.0 + self.offset) * self.s[I]
+            #self.s_hat[I] = self.s[I]            
             
     @ti.kernel
     def update_s(self):
@@ -101,6 +103,7 @@ class BICGPoissonSolver(CGPoissonSolver):
     def solve(self):
         self.init()
         initial_rTr = self.reduce(self.r, self.r)
+        print('Initial residual', ti.sqrt(initial_rTr))
         for i in range(self.steps):
             self.rho[None] = self.reduce(self.r, self.r_tld)
             if self.rho[None] == 0.0:
@@ -133,9 +136,9 @@ class BICGPoissonSolver(CGPoissonSolver):
             rTr = self.reduce(self.r, self.r)
 
             if not self.quiet:
-                print('Iter', i, rTr)
+                print('Iter =', i, ' Residual =', ti.sqrt(rTr))
 
-            if (rTr / initial_rTr) < self.eps:
+            if ti.sqrt(rTr / initial_rTr) < self.eps:
                 print('BICG Converged...')
                 break
 
