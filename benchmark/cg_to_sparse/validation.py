@@ -24,6 +24,7 @@ def report(xk):
 
 print('Solving in Scipy...')
 x = bicgstab(a, b, tol=1e-6, callback=report)     # Solve in Scipy
+print(ssl_conv_history)
 with open('scipyconv.txt', 'w') as f:
     for line in ssl_conv_history:
         f.write(str(line)+'\n')
@@ -42,7 +43,6 @@ plt.xlabel('Iteration')
 plt.ylabel('log(Residual)')
 plt.grid(True)
 plt.show()
-
 
 # Procedure in Octave
 '''
