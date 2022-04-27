@@ -57,14 +57,14 @@ class BICGPoissonSolver(CGPoissonSolver):
     @ti.kernel
     def update_phat(self):
         for I in ti.grouped(self.p_hat):
-            self.p_hat[I] = 1.0 / (4.0 + self.offset) * self.p[I]
-            # self.p_hat[I] = self.p[I]            
+            # self.p_hat[I] = 1.0 / (4.0 + self.offset) * self.p[I]
+            self.p_hat[I] = self.p[I]            
 
     @ti.kernel
     def update_shat(self):
         for I in ti.grouped(self.s_hat):
-            self.s_hat[I] = 1.0 / (4.0 + self.offset) * self.s[I]
-            #self.s_hat[I] = self.s[I]            
+            # self.s_hat[I] = 1.0 / (4.0 + self.offset) * self.s[I]
+            self.s_hat[I] = self.s[I]            
             
     @ti.kernel
     def update_s(self):
@@ -103,7 +103,9 @@ class BICGPoissonSolver(CGPoissonSolver):
     def solve(self):
         self.init()
         initial_rTr = self.reduce(self.r, self.r)
-        print('Initial residual', ti.sqrt(initial_rTr))
+        if not self.quiet:
+            print('Initial residual =', ti.sqrt(initial_rTr))
+        self.history.append(f'{ti.sqrt(initial_rTr):e}\n')        
         for i in range(self.steps):
             self.rho[None] = self.reduce(self.r, self.r_tld)
             if self.rho[None] == 0.0:
@@ -134,9 +136,11 @@ class BICGPoissonSolver(CGPoissonSolver):
             self.update_r()
 
             rTr = self.reduce(self.r, self.r)
-
+            
+            self.history.append(f'{ti.sqrt(rTr):e}\n') # Write converge history; i+1 because starting from 1.
+            
             if not self.quiet:
-                print('Iter =', i, ' Residual =', ti.sqrt(rTr))
+                print('Iter =', i+1, ' Residual =', ti.sqrt(rTr))
 
             if ti.sqrt(rTr / initial_rTr) < self.eps:
                 print('BICG Converged...')

@@ -13,6 +13,7 @@ class CGPoissonSolver:
         self.N_ext = self.N // 2
         self.steps = self.N * self.N # Cg should converge within the size of the vector
         self.quiet = quiet
+        self.history = []                # Convergence history data
         # -- Conjugate gradient variables -- 
         self.r = ti.field(dtype=self.real) # residual
         self.b = ti.field(dtype=self.real) # residual
@@ -77,7 +78,9 @@ class CGPoissonSolver:
     def solve(self):
         self.init()
         initial_rTr = self.reduce(self.r, self.r) # Compute initial residual
-        print('Initial residual', ti.sqrt(initial_rTr))
+        if not self.quiet:
+            print('Initial residual =', ti.sqrt(initial_rTr))
+        self.history.append(f'{ti.sqrt(initial_rTr):e}\n')
         old_rTr = initial_rTr
         self.update_p() # Initial p = r + beta * p ( beta = 0 )
         # -- Main loop -- 
@@ -99,9 +102,15 @@ class CGPoissonSolver:
             # 5. Update p using beta
             self.update_p()
             old_rTr = new_rTr
+            self.history.append(f'{ti.sqrt(new_rTr):e}\n') # Write converge history; i+1 because starting from 1.
             # Visualizations
             if not self.quiet:
-                print(f'Iter = {i:4}, Residual = {ti.sqrt(new_rTr):e}') # Turn off residual display for perf testing.
+                print(f'Iter = {i+1:4}, Residual = {ti.sqrt(new_rTr):e}')
+
+    def save_history(self):
+        with open('convergence.txt', 'w') as f:
+            for line in self.history:
+                f.write(line)
 
     @ti.kernel
     def compute_residual(self): # compute r = Ax - b
@@ -135,7 +144,7 @@ class CGPoissonSolver:
         bnp = self.b.to_numpy() # Convert to numpy ndarray
         bsp = bnp[self.N_ext:self.N_tot-self.N_ext, self.N_ext:self.N_tot-self.N_ext] # Slicing
         b = bsp.flatten(order='C') # Flatten the array to a 1D vector
-        np.savetxt('b.csv', b, delimiter=',', fmt='%50.42f') # For debugging purpose
+        np.savetxt('b.csv', b, delimiter=',', fmt='%80.70f') # For debugging purpose
         return b
         
     def build_x(self):
@@ -190,7 +199,7 @@ class CGPoissonSolverYM(CGPoissonSolver): # YM's CGSolver version; featuring a g
             # Visualizations
             if not self.quiet:
                 print(f'Iter = {i:4}, Residual = {new_rTr:e}') # Turn off residual display for perf testing.
-            
+
     def check_solution(self):   # Return the norm of rTr as the residual
         self.compute_Ax()
         self.sum[None] = 0.0
