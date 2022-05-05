@@ -8,8 +8,8 @@ ti.init(default_fp=ti.f64, arch=ti.cpu)
 lx = 0.5
 ly = 0.1
 # nx and ny have to be multiples of 8.
-nx = 320
-ny = 64
+nx = 640
+ny = 128
 # Grid size
 dx = lx / nx
 dy = ly / ny
@@ -517,8 +517,8 @@ def puv_correction()->ti.f64:
         else:
             ucor[i, j] = (pcor[i - 1, j] - pcor[i, j]) * dy / Au[k, k]
             u[i, j] = u[i, j] + ucor[i, j]
-            if np.abs(ucor[i, j] / (u[i, j] + 1.0e-9)) >= ucor_max:
-                ucor_max = np.abs(ucor[i, j] / (u[i, j] + 1.0e-9))
+            if ti.abs(ucor[i, j] / (u[i, j] + 1.0e-9)) >= ucor_max:
+                ucor_max = ti.abs(ucor[i, j] / (u[i, j] + 1.0e-9))
                 
     vcor_max = 0.0
     for i, j in ti.ndrange((1, nx + 1), (1, ny + 2)):
@@ -529,8 +529,8 @@ def puv_correction()->ti.f64:
         else:
             vcor[i, j] = (pcor[i, j] - pcor[i, j - 1]) * dx / Av[k, k]
             v[i, j] = v[i, j] + vcor[i, j]
-            if np.abs(vcor[i, j] / (v[i, j] + 1.0e-9)) >= vcor_max:
-                vcor_max = np.abs(vcor[i, j] / (v[i, j] + 1.0e-9))
+            if ti.abs(vcor[i, j] / (v[i, j] + 1.0e-9)) >= vcor_max:
+                vcor_max = ti.abs(vcor[i, j] / (v[i, j] + 1.0e-9))
 
     for i, j in ti.ndrange(nx + 2, ny + 2):
         if ct[i, j] == 1:
@@ -633,7 +633,7 @@ if __name__ == "__main__":
         for subtime_step in range(500):
             pcor_current = 10000.0
             start = time.time()
-            solve_momentum_bicgstab(1e-8, 30, 0, 0)
+            solve_momentum_bicgstab(1e-8, 1, 0, 0)
             print(f'    >> [ time = {time_step * dt: .4f} ] It took {time.time()-start: .2f} sec to solve the momentum equation.')
 
             # Use write function to output matrix as desired.    
