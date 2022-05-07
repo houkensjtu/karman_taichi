@@ -17,7 +17,7 @@ class SIMPLESolver:
         self.dy = self.ly / self.ny
         self.rho= 1.00
         self.mu = 0.01
-        self.dt = 0.00001
+        self.dt = 10000.
         self.real = ti.f64
         
         self.u  = ti.field(dtype=self.real, shape=(nx+3, ny+2))
@@ -26,7 +26,7 @@ class SIMPLESolver:
         self.v0 = ti.field(dtype=self.real, shape=(nx+2, ny+3))
         
         self.p  = ti.field(dtype=self.real, shape=(nx+2, ny+2))
-        self.bc = {'w': [0.0, 0.0], 'e': [0.0, 0.0], 'n': [0.0, 0.0], 's': [0.0, 0.0] }
+        self.bc = {'w': [1.0, 0.0], 'e': [1.0, 0.0], 'n': [1.0, 0.0], 's': [1.0, 0.0] }
         self.ct = ti.field(dtype=self.real, shape=(nx+2, ny+2))   # Cell type
 
         self.coef_u = ti.field(dtype=self.real, shape=(nx+3, ny+2, 5))
@@ -39,7 +39,7 @@ class SIMPLESolver:
         self.disp = Display(self)
 
     def dump_matrix(self, step): # Save u,v,p at step to csv files
-        for name,val in {'u':self.u, 'v':self.v, 'p':self.p}.items():
+        for name,val in {'u':self.u, 'v':self.v, 'p':self.p, 'bu':self.b_u}.items():
             np.savetxt(f'log/{name}-{step:06}.csv', val.to_numpy(), delimiter=',')
 
     @ti.kernel
@@ -50,8 +50,8 @@ class SIMPLESolver:
             self.coef_u[i,j,2] =  -mu * dy / dx + rho * 0.5 * (self.u[i,j] + self.u[i+1,j]) * dy      # ae
             self.coef_u[i,j,3] =  -mu * dx / dy + rho * 0.5 * (self.v[i-1,j] + self.v[i,j]) * dx      # an
             self.coef_u[i,j,4] =  -mu * dx / dy - rho * 0.5 * (self.v[i-1,j+1] + self.v[i,j+1]) * dx  # as
-            self.coef_u[i,j,0] =  self.coef_u[i,j,1] + self.coef_u[i,j,2] + self.coef_u[i,j,3] +\
-                                  self.coef_u[i,j,4] + rho * dx * dy / dt                             # ap
+            self.coef_u[i,j,0] =  -(self.coef_u[i,j,1] + self.coef_u[i,j,2] + self.coef_u[i,j,3] +\
+                                  self.coef_u[i,j,4] + rho * dx * dy / dt)                            # ap
             self.b_u[i,j] = (self.p[i-1,j] - self.p[i,j]) * dy + rho * dx * dy / dt * self.u0[i, j]   # rhs
             
     @ti.kernel
@@ -62,8 +62,8 @@ class SIMPLESolver:
             self.coef_v[i,j,2] = -mu * dy / dx + rho * 0.5 * (self.u[i+1,j-1] + self.u[i+1,j]) * dy   # ae            
             self.coef_v[i,j,3] = -mu * dx / dy + rho * 0.5 * (self.v[i,j-1] + self.v[i,j]) * dx       # an
             self.coef_v[i,j,4] = -mu * dx / dy - rho * 0.5 * (self.v[i,j+1] + self.v[i,j]) * dx       # as
-            self.coef_v[i,j,0] = self.coef_v[i,j,1] + self.coef_v[i,j,2] + self.coef_v[i,j,3] +\
-                                 self.coef_v[i,j,4] + rho * dx * dy / dt                              # ap
+            self.coef_v[i,j,0] = -(self.coef_v[i,j,1] + self.coef_v[i,j,2] + self.coef_v[i,j,3] +\
+                                 self.coef_v[i,j,4] + rho * dx * dy / dt)                             # ap
             self.b_v[i,j] = (self.p[i,j] - self.p[i,j-1]) * dx + rho * dx * dy / dt * self.v0[i, j]   # rhs
             
     @ti.kernel
@@ -72,16 +72,48 @@ class SIMPLESolver:
 
     @ti.kernel
     def set_bc(self):
-        pass
-
+        nx, ny, bc = self.nx, self.ny, self.bc
+        for j in range(1,ny+1):
+            # u bc for w 
+            self.coef_u[1,j,1] = 0.0
+            self.coef_u[1,j,2] = 0.0
+            self.coef_u[1,j,3] = 0.0
+            self.coef_u[1,j,4] = 0.0            
+            self.coef_u[1,j,0] = 1.0
+            self.b_u[1,j] = bc['w'][0]
+            # u bc for e
+            self.coef_u[nx+1,j,1] = 0.0
+            self.coef_u[nx+1,j,2] = 0.0
+            self.coef_u[nx+1,j,3] = 0.0
+            self.coef_u[nx+1,j,4] = 0.0            
+            self.coef_u[nx+1,j,0] = 1.0
+            self.b_u[nx+1,j] = bc['e'][0]
+        for i in range(1,nx+1):
+            # v bc for s
+            self.coef_v[i,1,1] = 0.0
+            self.coef_v[i,1,2] = 0.0
+            self.coef_v[i,1,3] = 0.0
+            self.coef_v[i,1,4] = 0.0            
+            self.coef_v[i,1,0] = 1.0
+            self.b_v[i,1] = bc['s'][0]
+            # v bc for n
+            self.coef_v[i,ny+1,1] = 0.0
+            self.coef_v[i,ny+1,2] = 0.0
+            self.coef_v[i,ny+1,3] = 0.0
+            self.coef_v[i,ny+1,4] = 0.0            
+            self.coef_v[i,ny+1,0] = 1.0
+            self.b_v[i,ny+1] = bc['n'][0]
+            
     def solve_momentum_eqn(self):
+        self.u0 = self.u
+        self.v0 = self.v
         self.compute_coef_u()
         self.compute_coef_v()
         self.set_bc()
         u_momentum_solver = BICGSolver(self.coef_u, self.b_u)
         v_momentum_solver = BICGSolver(self.coef_v, self.b_v)
-        u_momentum_solver.solve(eps=1e-8, quiet=False)
-        v_momentum_solver.solve(eps=1e-8, quiet=False)
+        u_momentum_solver.solve(eps=1e-6, quiet=False)
+        v_momentum_solver.solve(eps=1e-6, quiet=False)
         self.u = u_momentum_solver.x # Is this copying all elements?
         self.v = v_momentum_solver.x        
 
@@ -91,21 +123,24 @@ class SIMPLESolver:
     @ti.kernel
     def init(self):
         for i,j in self.u:
-            self.u[i,j] = 1.0
+            self.u[i,j] = 0.0
         for i,j in self.v:
             self.v[i,j] = 0.0 
         for i,j in self.p:
-            self.p[i,j] = - i * j
+            self.p[i,j] = 10.0 - i * j
 
     def solve(self):
         self.init()
-        self.solve_momentum_eqn()
-        self.solve_pcorrection_eqn()
-        step = 1
-        self.disp.display(f'log/{step:06}.png')
-        self.dump_matrix(step)
+        for step in range(3):
+            self.solve_momentum_eqn()
+            self.solve_pcorrection_eqn()
+            self.disp.display(f'log/{step:06}.png')
+            self.dump_matrix(step)
 
 # Lid-driven Cavity            
-ssolver = SIMPLESolver(1.0, 1.0, 128, 128) # lx, ly, nx, ny
-ssolver.bc['n'][1] = 1.0
+ssolver = SIMPLESolver(1.0, 1.0, 256, 256) # lx, ly, nx, ny
+ssolver.bc['w'][0] = 1.0
+ssolver.bc['e'][0] = 1.0
+ssolver.bc['n'][0] = 1.0
+ssolver.bc['s'][0] = 1.0
 ssolver.solve()

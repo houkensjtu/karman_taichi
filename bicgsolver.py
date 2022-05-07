@@ -47,13 +47,13 @@ class BICGSolver(CGSolver):
     @ti.kernel
     def update_phat(self):
         for I in ti.grouped(self.p_hat):
-            # self.p_hat[I] = 1.0 / (4.0 + self.offset) * self.p[I]
+            # self.p_hat[I] = 1.0 / self.coef[I,0] * self.p[I]
             self.p_hat[I] = self.p[I]            
 
     @ti.kernel
     def update_shat(self):
         for I in ti.grouped(self.s_hat):
-            # self.s_hat[I] = 1.0 / (4.0 + self.offset) * self.s[I]
+            # self.s_hat[I] = 1.0 / self.coef[I,0] * self.s[I]
             self.s_hat[I] = self.s[I]            
             
     @ti.kernel
@@ -89,7 +89,7 @@ class BICGSolver(CGSolver):
         initial_rTr = self.reduce(self.r, self.r)
         if not quiet:
             print('Initial residual =', ti.sqrt(initial_rTr))
-        self.history.append(f'{ti.sqrt(initial_rTr):e}\n')        
+        self.history.append(f'{ti.sqrt(initial_rTr):e}\n')
         for i in range(self.steps):
             self.rho[None] = self.reduce(self.r, self.r_tld)
             if self.rho[None] == 0.0:
