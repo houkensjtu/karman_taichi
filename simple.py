@@ -1,6 +1,7 @@
 import taichi as ti
 import numpy as np
 from display import Display
+from cgsolver import CGSolver
 
 ti.init(arch=ti.cpu, default_fp=ti.f64)
 
@@ -76,8 +77,8 @@ class SIMPLESolver:
         self.compute_coef_u()
         self.compute_coef_v()
         self.set_bc()
-        #u_momentum_solver = CGSolver(coef_u, b_u)
-        #v_momentum_solver = CGSolver(coef_v, b_v)
+        u_momentum_solver = CGSolver(self.coef_u, self.b_u)
+        v_momentum_solver = CGSolver(self.coef_v, self.b_v)
         #u_momentum_solver.solve(max_iter=100, eps=1e-8, quiet=True)
         #v_momentum_solver.solve(max_iter=100, eps=1e-8, quiet=True)        
 
