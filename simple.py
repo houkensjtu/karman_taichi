@@ -2,6 +2,7 @@ import taichi as ti
 import numpy as np
 from display import Display
 from cgsolver import CGSolver
+from bicgsolver import BICGSolver
 
 ti.init(arch=ti.cpu, default_fp=ti.f64)
 
@@ -77,10 +78,12 @@ class SIMPLESolver:
         self.compute_coef_u()
         self.compute_coef_v()
         self.set_bc()
-        u_momentum_solver = CGSolver(self.coef_u, self.b_u)
-        v_momentum_solver = CGSolver(self.coef_v, self.b_v)
-        #u_momentum_solver.solve(max_iter=100, eps=1e-8, quiet=True)
-        #v_momentum_solver.solve(max_iter=100, eps=1e-8, quiet=True)        
+        u_momentum_solver = BICGSolver(self.coef_u, self.b_u)
+        v_momentum_solver = BICGSolver(self.coef_v, self.b_v)
+        u_momentum_solver.solve(eps=1e-8, quiet=False)
+        v_momentum_solver.solve(eps=1e-8, quiet=False)
+        self.u = u_momentum_solver.x # Is this copying all elements?
+        self.v = v_momentum_solver.x        
 
     def solve_pcorrection_eqn(self):
         pass
@@ -88,9 +91,9 @@ class SIMPLESolver:
     @ti.kernel
     def init(self):
         for i,j in self.u:
-            self.u[i,j] = - i
+            self.u[i,j] = 1.0
         for i,j in self.v:
-            self.v[i,j] = - j 
+            self.v[i,j] = 0.0 
         for i,j in self.p:
             self.p[i,j] = - i * j
 
