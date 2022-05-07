@@ -17,7 +17,7 @@ class SIMPLESolver:
         self.dy = self.ly / self.ny
         self.rho= 1.00
         self.mu = 0.01
-        self.dt = 10000.
+        self.dt = .001
         self.real = ti.f64
         
         self.u  = ti.field(dtype=self.real, shape=(nx+3, ny+2))
@@ -51,7 +51,7 @@ class SIMPLESolver:
             self.coef_u[i,j,3] =  -mu * dx / dy + rho * 0.5 * (self.v[i-1,j] + self.v[i,j]) * dx      # an
             self.coef_u[i,j,4] =  -mu * dx / dy - rho * 0.5 * (self.v[i-1,j+1] + self.v[i,j+1]) * dx  # as
             self.coef_u[i,j,0] =  -(self.coef_u[i,j,1] + self.coef_u[i,j,2] + self.coef_u[i,j,3] +\
-                                  self.coef_u[i,j,4] + rho * dx * dy / dt)                            # ap
+                                  self.coef_u[i,j,4]) + rho * dx * dy / dt                            # ap
             self.b_u[i,j] = (self.p[i-1,j] - self.p[i,j]) * dy + rho * dx * dy / dt * self.u0[i, j]   # rhs
             
     @ti.kernel
@@ -63,7 +63,7 @@ class SIMPLESolver:
             self.coef_v[i,j,3] = -mu * dx / dy + rho * 0.5 * (self.v[i,j-1] + self.v[i,j]) * dx       # an
             self.coef_v[i,j,4] = -mu * dx / dy - rho * 0.5 * (self.v[i,j+1] + self.v[i,j]) * dx       # as
             self.coef_v[i,j,0] = -(self.coef_v[i,j,1] + self.coef_v[i,j,2] + self.coef_v[i,j,3] +\
-                                 self.coef_v[i,j,4] + rho * dx * dy / dt)                             # ap
+                                 self.coef_v[i,j,4]) + rho * dx * dy / dt                             # ap
             self.b_v[i,j] = (self.p[i,j] - self.p[i,j-1]) * dx + rho * dx * dy / dt * self.v0[i, j]   # rhs
             
     @ti.kernel
@@ -111,7 +111,10 @@ class SIMPLESolver:
         self.compute_coef_v()
         self.set_bc()
         u_momentum_solver = BICGSolver(self.coef_u, self.b_u)
+        #u_momentum_solver = CGSolver(self.coef_u, self.b_u)        
         v_momentum_solver = BICGSolver(self.coef_v, self.b_v)
+        #v_momentum_solver = CGSolver(self.coef_v, self.b_v)        
+        
         u_momentum_solver.solve(eps=1e-6, quiet=False)
         v_momentum_solver.solve(eps=1e-6, quiet=False)
         self.u = u_momentum_solver.x # Is this copying all elements?
@@ -127,7 +130,7 @@ class SIMPLESolver:
         for i,j in self.v:
             self.v[i,j] = 0.0 
         for i,j in self.p:
-            self.p[i,j] = 10.0 - i * j
+            self.p[i,j] = - i * 100 * j
 
     def solve(self):
         self.init()
