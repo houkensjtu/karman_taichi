@@ -17,7 +17,7 @@ class SIMPLESolver:
         self.dy = self.ly / self.ny
         self.rho= 1.00
         self.mu = 0.01
-        self.dt = .001
+        self.dt = 10000
         self.real = ti.f64
         
         self.u  = ti.field(dtype=self.real, shape=(nx+3, ny+2))
@@ -45,7 +45,7 @@ class SIMPLESolver:
     @ti.kernel
     def compute_coef_u(self):
         nx, ny, dx, dy, dt, rho, mu = self.nx, self.ny, self.dx, self.dy, self.dt, self.rho, self.mu
-        for i,j in ti.ndrange((1,nx+2), (1,ny+1)):
+        for i,j in ti.ndrange((2,nx+1), (1,ny+1)):
             self.coef_u[i,j,1] =  -mu * dy / dx - rho * 0.5 * (self.u[i,j] + self.u[i-1,j]) * dy      # aw
             self.coef_u[i,j,2] =  -mu * dy / dx + rho * 0.5 * (self.u[i,j] + self.u[i+1,j]) * dy      # ae
             self.coef_u[i,j,3] =  -mu * dx / dy + rho * 0.5 * (self.v[i-1,j] + self.v[i,j]) * dx      # an
@@ -53,6 +53,10 @@ class SIMPLESolver:
             self.coef_u[i,j,0] =  -(self.coef_u[i,j,1] + self.coef_u[i,j,2] + self.coef_u[i,j,3] +\
                                   self.coef_u[i,j,4]) + rho * dx * dy / dt                            # ap
             self.b_u[i,j] = (self.p[i-1,j] - self.p[i,j]) * dy + rho * dx * dy / dt * self.u0[i, j]   # rhs
+            # Verified with the following input, results close enough to the original bicg solver.
+            # xl = (i - 1) / (self.nx + 1)
+            # yl = (j - 1) / self.ny
+            # self.b_u[i,j] = ti.sin(2.0 * np.pi * xl) * ti.sin(2.0 * np.pi * yl)
             
     @ti.kernel
     def compute_coef_v(self):
@@ -74,35 +78,23 @@ class SIMPLESolver:
     def set_bc(self):
         nx, ny, bc = self.nx, self.ny, self.bc
         for j in range(1,ny+1):
-            # u bc for w 
-            self.coef_u[1,j,1] = 0.0
-            self.coef_u[1,j,2] = 0.0
-            self.coef_u[1,j,3] = 0.0
-            self.coef_u[1,j,4] = 0.0            
-            self.coef_u[1,j,0] = 1.0
-            self.b_u[1,j] = bc['w'][0]
+            # u bc for w
+            self.b_u[2,j] += - self.coef_u[2,j,1] * bc['w'][0]
+            self.coef_u[2,j,1] = 0.0
+            self.u[1,j] = bc['w'][0]
             # u bc for e
-            self.coef_u[nx+1,j,1] = 0.0
-            self.coef_u[nx+1,j,2] = 0.0
-            self.coef_u[nx+1,j,3] = 0.0
-            self.coef_u[nx+1,j,4] = 0.0            
-            self.coef_u[nx+1,j,0] = 1.0
-            self.b_u[nx+1,j] = bc['e'][0]
+            self.b_u[nx,j] += - self.coef_u[nx,j,2] * bc['e'][0]            
+            self.coef_u[nx,j,2] = 0.0
+            self.u[nx+1,j] = bc['e'][0]
+            
         for i in range(1,nx+1):
             # v bc for s
-            self.coef_v[i,1,1] = 0.0
-            self.coef_v[i,1,2] = 0.0
-            self.coef_v[i,1,3] = 0.0
-            self.coef_v[i,1,4] = 0.0            
-            self.coef_v[i,1,0] = 1.0
-            self.b_v[i,1] = bc['s'][0]
+            self.b_v[i,2] += - self.coef_v[i,2,4] * bc['s'][0]            
+            self.coef_v[i,2,4] = 0.0            
             # v bc for n
-            self.coef_v[i,ny+1,1] = 0.0
-            self.coef_v[i,ny+1,2] = 0.0
-            self.coef_v[i,ny+1,3] = 0.0
-            self.coef_v[i,ny+1,4] = 0.0            
-            self.coef_v[i,ny+1,0] = 1.0
-            self.b_v[i,ny+1] = bc['n'][0]
+            self.b_v[i,ny] += - self.coef_v[i,ny,3] * bc['n'][0]
+            self.coef_v[i,ny,3] = 0.0
+
             
     def solve_momentum_eqn(self):
         self.u0 = self.u
@@ -117,9 +109,10 @@ class SIMPLESolver:
         
         u_momentum_solver.solve(eps=1e-6, quiet=False)
         v_momentum_solver.solve(eps=1e-6, quiet=False)
-        self.u = u_momentum_solver.x # Is this copying all elements?
-        self.v = v_momentum_solver.x        
 
+        self.u = u_momentum_solver.x # Problematic?
+        self.v = v_momentum_solver.x
+        
     def solve_pcorrection_eqn(self):
         pass
         
@@ -130,18 +123,18 @@ class SIMPLESolver:
         for i,j in self.v:
             self.v[i,j] = 0.0 
         for i,j in self.p:
-            self.p[i,j] = - i * 100 * j
+            self.p[i,j] = 0.0 
 
     def solve(self):
         self.init()
-        for step in range(3):
+        for step in range(1):
             self.solve_momentum_eqn()
             self.solve_pcorrection_eqn()
             self.disp.display(f'log/{step:06}.png')
             self.dump_matrix(step)
 
 # Lid-driven Cavity            
-ssolver = SIMPLESolver(1.0, 1.0, 256, 256) # lx, ly, nx, ny
+ssolver = SIMPLESolver(1.0, 1.0, 128, 128) # lx, ly, nx, ny
 ssolver.bc['w'][0] = 1.0
 ssolver.bc['e'][0] = 1.0
 ssolver.bc['n'][0] = 1.0
