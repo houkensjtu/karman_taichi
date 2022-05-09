@@ -61,7 +61,7 @@ class SIMPLESolver:
     @ti.kernel
     def compute_coef_v(self):
         nx, ny, dx, dy, dt, rho, mu = self.nx, self.ny, self.dx, self.dy, self.dt, self.rho, self.mu
-        for i,j in ti.ndrange((1,nx+1),(1,ny+2)):
+        for i,j in ti.ndrange((1,nx+1),(2,ny+1)):
             self.coef_v[i,j,1] = -mu * dy / dx - rho * 0.5 * (self.u[i,j] + self.u[i,j-1]) * dy       # aw
             self.coef_v[i,j,2] = -mu * dy / dx + rho * 0.5 * (self.u[i+1,j-1] + self.u[i+1,j]) * dy   # ae            
             self.coef_v[i,j,3] = -mu * dx / dy + rho * 0.5 * (self.v[i,j-1] + self.v[i,j]) * dx       # an
@@ -90,11 +90,12 @@ class SIMPLESolver:
         for i in range(1,nx+1):
             # v bc for s
             self.b_v[i,2] += - self.coef_v[i,2,4] * bc['s'][0]            
-            self.coef_v[i,2,4] = 0.0            
+            self.coef_v[i,2,4] = 0.0
+            self.v[i,1] = bc['s'][0]
             # v bc for n
             self.b_v[i,ny] += - self.coef_v[i,ny,3] * bc['n'][0]
             self.coef_v[i,ny,3] = 0.0
-
+            self.v[i,ny+1] = bc['n'][0]
             
     def solve_momentum_eqn(self):
         self.u0 = self.u
@@ -102,17 +103,14 @@ class SIMPLESolver:
         self.compute_coef_u()
         self.compute_coef_v()
         self.set_bc()
-        u_momentum_solver = BICGSolver(self.coef_u, self.b_u)
+        u_momentum_solver = BICGSolver(self.coef_u, self.b_u, self.u)        
         #u_momentum_solver = CGSolver(self.coef_u, self.b_u)        
-        v_momentum_solver = BICGSolver(self.coef_v, self.b_v)
+        v_momentum_solver = BICGSolver(self.coef_v, self.b_v, self.v)
         #v_momentum_solver = CGSolver(self.coef_v, self.b_v)        
         
         u_momentum_solver.solve(eps=1e-6, quiet=False)
         v_momentum_solver.solve(eps=1e-6, quiet=False)
 
-        self.u = u_momentum_solver.x # Problematic?
-        self.v = v_momentum_solver.x
-        
     def solve_pcorrection_eqn(self):
         pass
         

@@ -4,8 +4,8 @@ from cgsolver import CGSolver
 
 @ti.data_oriented
 class BICGSolver(CGSolver):
-    def __init__(self, coef, b):
-        super().__init__(coef, b)
+    def __init__(self, coef, b, x):
+        super().__init__(coef, b, x)
         self.r_tld = ti.field(dtype=self.real)
         self.p_hat = ti.field(dtype=self.real)
         self.s = ti.field(dtype=self.real)

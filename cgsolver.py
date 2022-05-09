@@ -3,9 +3,10 @@ import numpy as np
 
 @ti.data_oriented
 class CGSolver:
-    def __init__(self, coef, b):
+    def __init__(self, coef, b, x):
         self.coef = coef
         self.b = b
+        self.x = x
         self.NX = coef.shape[0]
         self.NY = coef.shape[1]
         self.real = ti.f64
@@ -15,7 +16,6 @@ class CGSolver:
         
         # -- Conjugate gradient variables -- 
         self.r = ti.field(dtype=self.real) # residual
-        self.x = ti.field(dtype=self.real) # solution
         self.p = ti.field(dtype=self.real) # conjugate gradient
         self.Ap = ti.field(dtype=self.real)# matrix-vector product
         self.Ax = ti.field(dtype=self.real)# matrix-vector product
@@ -23,7 +23,7 @@ class CGSolver:
         self.beta = ti.field(dtype=self.real)  # step size
         ti.root.place(self.alpha, self.beta) # , self.sum)
 
-        ti.root.dense(ti.ij, (self.NX, self.NY)).place(self.x, self.p, self.Ap, self.r, self.Ax) # Dense data structure
+        ti.root.dense(ti.ij, (self.NX, self.NY)).place(self.p, self.Ap, self.r, self.Ax) # Dense data structure
         #ti.root.pointer(ti.ij, self.N_tot//16) \
         #       .dense(ti.ij, 16) \
         #       .place(self.x, self.p, self.Ap, self.r, self.Ax, self.b)
