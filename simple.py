@@ -26,7 +26,7 @@ class SIMPLESolver:
         self.v0 = ti.field(dtype=self.real, shape=(nx+2, ny+3))
         
         self.p  = ti.field(dtype=self.real, shape=(nx+2, ny+2))
-        self.bc = {'w': [1.0, 0.0], 'e': [1.0, 0.0], 'n': [1.0, 0.0], 's': [1.0, 0.0] }
+        self.bc = {'w': [0.0, 0.0], 'e': [0.0, 0.0], 'n': [0.0, 0.0], 's': [0.0, 0.0] }
         self.ct = ti.field(dtype=self.real, shape=(nx+2, ny+2))   # Cell type
 
         self.coef_u = ti.field(dtype=self.real, shape=(nx+3, ny+2, 5))
@@ -77,37 +77,56 @@ class SIMPLESolver:
     @ti.kernel
     def set_bc(self):
         nx, ny, bc = self.nx, self.ny, self.bc
+        # u - [nx+3, ny+2] - i E [0,nx+2], j E [0,ny+1]
+        # v - [nx+2, ny+3] - i E [0,nx+1], j E [0,ny+2]
         for j in range(1,ny+1):
             # u bc for w
-            self.b_u[2,j] += - self.coef_u[2,j,1] * bc['w'][0]
-            self.coef_u[2,j,1] = 0.0
-            self.u[1,j] = bc['w'][0]
+            self.b_u[2,j] += - self.coef_u[2,j,1] * bc['w'][0]       # b += aw * u_inlet
+            self.coef_u[2,j,1] = 0.0                                 # aw = 0
+            self.u[1,j] = bc['w'][0]                                 # u_inlet
             # u bc for e
-            self.b_u[nx,j] += - self.coef_u[nx,j,2] * bc['e'][0]            
-            self.coef_u[nx,j,2] = 0.0
-            self.u[nx+1,j] = bc['e'][0]
+            self.b_u[nx,j] += - self.coef_u[nx,j,2] * bc['e'][0]     # b += ae * u_outlet
+            self.coef_u[nx,j,2] = 0.0                                # ae = 0
+            self.u[nx+1,j] = bc['e'][0]                              # u_outlet
             
         for i in range(1,nx+1):
             # v bc for s
-            self.b_v[i,2] += - self.coef_v[i,2,4] * bc['s'][0]            
-            self.coef_v[i,2,4] = 0.0
-            self.v[i,1] = bc['s'][0]
+            self.b_v[i,2] += - self.coef_v[i,2,4] * bc['s'][0]       # b += as * v_inlet
+            self.coef_v[i,2,4] = 0.0                                 # as = 0
+            self.v[i,1] = bc['s'][0]                                 # v_inlet
             # v bc for n
-            self.b_v[i,ny] += - self.coef_v[i,ny,3] * bc['n'][0]
-            self.coef_v[i,ny,3] = 0.0
-            self.v[i,ny+1] = bc['n'][0]
+            self.b_v[i,ny] += - self.coef_v[i,ny,3] * bc['n'][0]     # b += an * v_outlet
+            self.coef_v[i,ny,3] = 0.0                                # an = 0
+            self.v[i,ny+1] = bc['n'][0]                              # v_outlet
+
+        for i in range(2,nx+1):
+            self.b_u[i,1] += 2 * self.mu * bc['s'][1] * self.dx / self.dy # North sliding wall
+            self.coef_u[i,1,0] = self.coef_u[i,1,0] - self.coef_u[i,1,4] + 2 * self.mu * self.dx / self.dy
+            # ap = ap - as + 2mudx/dy
+            
+            self.b_u[i,ny] += 2 * self.mu * bc['n'][1] * self.dx / self.dy # South sliding wall
+            self.coef_u[i,ny,0] = self.coef_u[i,ny,0] - self.coef_u[i,ny,3] + 2 * self.mu * self.dx / self.dy
+            # ap = ap - an + 2mudx/dy
+
+        for j in range(2,ny+1):
+            self.b_v[1,j] += 2 * self.mu * bc['w'][1] * self.dy / self.dx  # West sliding wall
+            self.coef_v[1,j,0] = self.coef_v[1,j,0] - self.coef_v[1,j,1] + 2 * self.mu * self.dy / self.dx
+
+            self.b_v[nx,j] += 2 * self.mu * bc['e'][1] * self.dy / self.dx  # West sliding wall
+            self.coef_v[nx,j,0] = self.coef_v[nx,j,0] - self.coef_v[nx,j,1] + 2 * self.mu * self.dy / self.dx
+            
             
     def solve_momentum_eqn(self):
-        self.u0 = self.u
-        self.v0 = self.v
+        self.u0.copy_from(self.u)
+        self.v0.copy_from(self.v)
+
         self.compute_coef_u()
         self.compute_coef_v()
-        self.set_bc()
+        self.set_bc()                
         u_momentum_solver = BICGSolver(self.coef_u, self.b_u, self.u)        
         #u_momentum_solver = CGSolver(self.coef_u, self.b_u)        
         v_momentum_solver = BICGSolver(self.coef_v, self.b_v, self.v)
         #v_momentum_solver = CGSolver(self.coef_v, self.b_v)        
-        
         u_momentum_solver.solve(eps=1e-6, quiet=False)
         v_momentum_solver.solve(eps=1e-6, quiet=False)
 
@@ -133,8 +152,18 @@ class SIMPLESolver:
 
 # Lid-driven Cavity            
 ssolver = SIMPLESolver(1.0, 1.0, 128, 128) # lx, ly, nx, ny
-ssolver.bc['w'][0] = 1.0
-ssolver.bc['e'][0] = 1.0
-ssolver.bc['n'][0] = 1.0
-ssolver.bc['s'][0] = 1.0
+
+# Boundary conditions
+# ssolver.bc['w'][0] = 0.0    # West Normal velocity               
+# ssolver.bc['w'][1] = 1.0    # West Tangential velocity
+
+# ssolver.bc['e'][0] = 0.0    # East Normal velocity
+# ssolver.bc['e'][1] = 0.0    # East Tangential velocity
+
+# ssolver.bc['n'][0] = 0.0    # North Normal velocity
+ssolver.bc['n'][1] = 1.0    # North Tangential velocity
+
+# ssolver.bc['s'][0] = 0.0    # South Normal velocity
+# ssolver.bc['s'][1] = 0.0    # South Tangential velocity
+
 ssolver.solve()
