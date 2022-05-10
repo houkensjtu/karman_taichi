@@ -26,6 +26,7 @@ class SIMPLESolver:
         self.v0 = ti.field(dtype=self.real, shape=(nx+2, ny+3))
         
         self.p  = ti.field(dtype=self.real, shape=(nx+2, ny+2))
+        self.pcor = ti.field(dtype=self.real, shape=(nx+2, ny+2))        
         self.bc = {'w': [0.0, 0.0], 'e': [0.0, 0.0], 'n': [0.0, 0.0], 's': [0.0, 0.0] }
         self.ct = ti.field(dtype=self.real, shape=(nx+2, ny+2))   # Cell type
 
@@ -69,11 +70,19 @@ class SIMPLESolver:
             self.coef_v[i,j,0] = -(self.coef_v[i,j,1] + self.coef_v[i,j,2] + self.coef_v[i,j,3] +\
                                  self.coef_v[i,j,4]) + rho * dx * dy / dt                             # ap
             self.b_v[i,j] = (self.p[i,j] - self.p[i,j-1]) * dx + rho * dx * dy / dt * self.v0[i, j]   # rhs
+
             
     @ti.kernel
     def compute_coef_p(self):
-        pass
-
+        nx, ny, dx, dy, rho = self.nx, self.ny, self.dx, self.dy, self.rho
+        for i,j in ti.ndrange((1,nx+1),(1,ny+1)):  # [1,nx], [1,ny]
+            self.b_p[i,j] = rho * (self.u[i,j] - self.u[i+1,j]) * dy + rho * (self.v[i,j] - self.v[i,j+1]) * dx
+            self.coef_p[i,j,1] = - self.coef_u[i,j,0]                 # aw
+            self.coef_p[i,j,2] = - self.coef_u[i+1,j,0]               # ae
+            self.coef_p[i,j,3] = - self.coef_v[i,j+1,0]               # an
+            self.coef_p[i,j,4] = - self.coef_v[i,j,0]                 # as
+            self.coef_p[i,j,0] = - (self.coef_p[i,j,1] + self.coef_p[i,j,2] + self.coef_p[i,j,3] + self.coef_p[i,j,4])
+    
     @ti.kernel
     def set_bc(self):
         nx, ny, bc = self.nx, self.ny, self.bc
@@ -114,24 +123,31 @@ class SIMPLESolver:
 
             self.b_v[nx,j] += 2 * self.mu * bc['e'][1] * self.dy / self.dx  # West sliding wall
             self.coef_v[nx,j,0] = self.coef_v[nx,j,0] - self.coef_v[nx,j,1] + 2 * self.mu * self.dy / self.dx
-            
+
+    @ti.kernel
+    def update_pressure(self):
+        for I in ti.grouped(self.p):
+            self.p[I] = self.p[I] + self.pcor[I]
+    
+    @ti.kernel
+    def update_velocity(self):
+        pass
             
     def solve_momentum_eqn(self):
         self.u0.copy_from(self.u)
         self.v0.copy_from(self.v)
-
         self.compute_coef_u()
         self.compute_coef_v()
         self.set_bc()                
         u_momentum_solver = BICGSolver(self.coef_u, self.b_u, self.u)        
-        #u_momentum_solver = CGSolver(self.coef_u, self.b_u)        
         v_momentum_solver = BICGSolver(self.coef_v, self.b_v, self.v)
-        #v_momentum_solver = CGSolver(self.coef_v, self.b_v)        
         u_momentum_solver.solve(eps=1e-6, quiet=False)
         v_momentum_solver.solve(eps=1e-6, quiet=False)
 
     def solve_pcorrection_eqn(self):
-        pass
+        self.compute_coef_p()
+        p_correction_solver = CGSolver(self.coef_p, self.b_p, self.pcor)
+        p_correction_solver.solve(eps=1e-8, quiet=False)
         
     @ti.kernel
     def init(self):
@@ -147,6 +163,10 @@ class SIMPLESolver:
         for step in range(1):
             self.solve_momentum_eqn()
             self.solve_pcorrection_eqn()
+
+            self.update_pressure()
+            self.update_velocity()
+            
             self.disp.display(f'log/{step:06}.png')
             self.dump_matrix(step)
 
