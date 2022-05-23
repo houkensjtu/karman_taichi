@@ -36,6 +36,7 @@ class CGSolver:
             self.Ap[i,j] = 0.0
             self.Ax[i,j] = 0.0
             self.p[i,j]  = 0.0
+            self.x[i,j]  = 0.0            
 
     @ti.kernel
     def reduce(self, p: ti.template(), q: ti.template())->ti.f64:
