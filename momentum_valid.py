@@ -20,9 +20,7 @@ class SIMPLESolver:
         self.dt = 100000
         self.real = ti.f64
         
-        self.alpha_p = 0.01
-        self.alpha_u = 0.01
-        self.alpha = 0.1
+        self.alpha_u = 1.0
         
         self.u  = ti.field(dtype=self.real, shape=(nx+3, ny+2))
         self.v  = ti.field(dtype=self.real, shape=(nx+2, ny+3))
@@ -111,41 +109,6 @@ class SIMPLESolver:
             self.b_v[i,j] = (self.p[i,j-1] - self.p[i,j]) * dx + rho * dx * dy / dt * self.v0[i, j]   # rhs
 
     @ti.kernel
-    def compute_mdiv(self):
-        nx, ny, dx, dy, rho = self.nx, self.ny, self.dx, self.dy, self.rho
-        for i,j in ti.ndrange((1,nx+1),(1,ny+1)):  # [1,nx], [1,ny]
-            self.mdiv[i,j] = rho * (self.u[i,j] - self.u[i+1,j]) * dy + rho * (self.v[i,j] - self.v[i,j+1]) * dx
-            
-    @ti.kernel
-    def compute_coef_p(self):
-        nx, ny, dx, dy, rho = self.nx, self.ny, self.dx, self.dy, self.rho
-        for i,j in ti.ndrange((1,nx+1),(1,ny+1)):  # [1,nx], [1,ny]
-            self.mdiv[i,j] = rho * (self.u[i,j] - self.u[i+1,j]) * dy + rho * (self.v[i,j] - self.v[i,j+1]) * dx
-            self.b_p[i,j] = self.mdiv[i,j]
-            self.coef_p[i,j,1] =  -rho * dy * dy / self.coef_u[i,j,0]                 # aw
-            self.coef_p[i,j,2] =  -rho * dy * dy / self.coef_u[i+1,j,0]               # ae
-            self.coef_p[i,j,3] =  -rho * dx * dx / self.coef_v[i,j+1,0]               # an
-            self.coef_p[i,j,4] =  -rho * dx * dx / self.coef_v[i,j,0]                 # as
-
-            if i == 1:
-                self.coef_p[i,j,1] = 0.0
-            if i == nx:
-                self.coef_p[i,j,2] = 0.0
-            if j == 1:
-                self.coef_p[i,j,4] = 0.0
-            if j == ny:
-                self.coef_p[i,j,3] = 0.0
-                
-            self.coef_p[i,j,0] = - (self.coef_p[i,j,1] + self.coef_p[i,j,2] + self.coef_p[i,j,3] + self.coef_p[i,j,4])
-            
-        #self.coef_p[1,1,1] = 0.0
-        #self.coef_p[1,1,2] = 0.0
-        #self.coef_p[1,1,3] = 0.0
-        #self.coef_p[1,1,4] = 0.0
-        #self.coef_p[1,1,0] = 1.0
-        #self.b_p[1,1] = 0.0
-    
-    @ti.kernel
     def set_bc(self):
         nx, ny, bc = self.nx, self.ny, self.bc
         # u - [nx+3, ny+2] - i E [0,nx+2], j E [0,ny+1]
@@ -188,91 +151,81 @@ class SIMPLESolver:
             self.coef_v[1,j,1] = 0.0
 
             self.b_v[nx,j] += 2 * self.mu * bc['e'][1] * self.dy / self.dx  # East sliding wall
-            self.coef_v[nx,j,0] += (self.coef_v[nx,j,1] + 2 * self.mu * self.dy / self.dx)
+            self.coef_v[nx,j,0] += (self.coef_v[nx,j,2] + 2 * self.mu * self.dy / self.dx)
             self.coef_v[nx,j,2] = 0.0
 
     @ti.kernel
-    def update_pressure(self):
-        nx, ny = self.nx, self.ny
-        for i,j in ti.ndrange((1,nx+1),(1,ny+1)):
-            self.p[i,j] += self.alpha_p * self.pcor[i,j]
-    
-    @ti.kernel
-    def update_velocity(self):
+    def jacobian_solve_u(self)->ti.f64:
         nx, ny, dx, dy = self.nx, self.ny, self.dx, self.dy
-        for i,j in ti.ndrange((2,nx+1),(1,ny+1)):
-            #self.u[i,j] += self.alpha_u * (self.pcor[i-1,j] - self.pcor[i,j]) * dy / self.coef_u[i,j,0]
-            self.u[i,j] += self.alpha * (self.pcor[i-1,j] - self.pcor[i,j]) * dy / self.coef_u[i,j,0]            
-        for i,j in ti.ndrange((1,nx+1),(2,ny+1)):
-            #self.v[i,j] += self.alpha_u * (self.pcor[i,j-1] - self.pcor[i,j]) * dx / self.coef_v[i,j,0]
-            self.v[i,j] += self.alpha * (self.pcor[i,j-1] - self.pcor[i,j]) * dx / self.coef_v[i,j,0]            
-            
-    def solve_momentum_eqn(self):
-        self.compute_coef_u()
-        self.compute_coef_v()
-        self.set_bc()
-        nx, ny, dx, dy = self.nx, self.ny, self.dx, self.dy
+        residual_max_udiv = 0.0
         for i,j in ti.ndrange((2,nx+1),(1,ny+1)):
             self.u_mid[i,j] = (- self.coef_u[i,j,1] * self.u[i-1,j] \
                            - self.coef_u[i,j,2] * self.u[i+1,j] \
                            - self.coef_u[i,j,3] * self.u[i,j+1] \
                            - self.coef_u[i,j,4] * self.u[i,j-1] \
                            + self.b_u[i,j] ) / self.coef_u[i,j,0]
+            if ti.abs(self.u_mid[i,j]-self.u[i,j]) > residual_max_udiv:
+                residual_max_udiv = ti.abs(self.u_mid[i,j]-self.u[i,j])
             self.u[i,j] = (1 - self.alpha_u) * self.u[i,j] + self.alpha_u * self.u_mid[i,j]
-        for i,j in ti.ndrange((1,nx+1),(2,ny+1)):
-            self.v_mid[i,j] = (- self.coef_v[i,j,1] * self.v[i-1,j] \
-                           - self.coef_v[i,j,2] * self.v[i+1,j] \
-                           - self.coef_v[i,j,3] * self.v[i,j+1] \
-                           - self.coef_v[i,j,4] * self.v[i,j-1] \
-                           + self.b_v[i,j] ) / self.coef_v[i,j,0]
-            self.v[i,j] = (1 - self.alpha_u) * self.v[i,j] + self.alpha_u * self.v_mid[i,j]            
+        return residual_max_udiv
 
-    def solve_pcorrection_eqn(self):
-        self.compute_coef_p()
-        nx, ny = self.nx, self.ny
-        for i,j in ti.ndrange((1,nx+1),(1,ny+1)):
-            self.pcor[i,j] = (- self.coef_p[i,j,1] * self.pcor[i-1,j] \
-                              - self.coef_p[i,j,2] * self.pcor[i+1,j] \
-                              - self.coef_p[i,j,3] * self.pcor[i,j+1] \
-                              - self.coef_p[i,j,4] * self.pcor[i,j-1] \
-                              + self.mdiv[i,j]) / self.coef_p[i,j,0]
-        
+    def jacob_solve_momentum_eqn(self, n_iter):
+        self.compute_coef_u()
+        self.set_bc()
+        for i in range(n_iter):
+            eps = self.jacobian_solve_u()
+            print('>>> Iter =', i, ', eps =', eps)
+
+    @ti.kernel
+    def update_velocity(self)->ti.f64:
+        alpha_u, nx, ny, dx, dy = self.alpha_u, self.nx, self.ny, self.dx, self.dy
+        residual_max_udiv = 0.0        
+        for i,j in ti.ndrange((2,nx+1),(1,ny+1)):
+            if ti.abs(self.u_mid[i,j]-self.u[i,j]) > residual_max_udiv:
+                residual_max_udiv = ti.abs(self.u_mid[i,j]-self.u[i,j])
+            self.u[i,j] = alpha_u * self.u_mid[i,j] + (1-alpha_u) * self.u[i,j]
+        return residual_max_udiv
+            
+    def bicg_solve_momentum_eqn(self, n_iter):
+        self.compute_coef_u()        
+        self.set_bc()                
+        for i in range(n_iter):
+            self.init()
+            u_momentum_solver = BICGSolver(self.coef_u, self.b_u, self.u_mid)
+            u_momentum_solver.solve(eps=1e-8, quiet=True)
+            eps = self.update_velocity()
+            print('>>> Iter =', i, ', eps =', eps)
+            
     @ti.kernel
     def init(self):
         for i,j in self.u:
             self.u[i,j] = 0.0
+            self.u_mid[i,j] = 0.0            
         for i,j in self.v:
-            self.v[i,j] = 0.0 
+            self.v[i,j] = 0.0
+            self.v_mid[i,j] = 0.0             
         for i,j in self.p:
             self.p[i,j] = 0.0
 
     def solve(self):
+        step = 0
+        
         self.init()
-        # self.v0.copy_from(self.v)            
-        # self.u0.copy_from(self.u)            
-        for step in range(60000):
-            self.solve_momentum_eqn()
-            #self.solve_momentum_eqn()
-            #self.solve_momentum_eqn()
-            #self.solve_momentum_eqn()
-            #self.solve_momentum_eqn()
-            #self.compute_mdiv()
-            #self.dump_matrix(step, 'mfin')
-            #self.dump_coef(step, 'mfin')
-            #self.disp.display(f'log/{step:06}-mfin.png')
-            
-            self.solve_pcorrection_eqn()
-            self.update_pressure()
-            self.update_velocity()
-            self.compute_mdiv()            
-            #self.dump_coef(step, 'corfin')
-            print(">>> Finished step", step)
-            if step % 100 == 1:
-                self.disp.display(f'log/{step:06}-corfin.png')                
-                self.dump_matrix(step, 'corfin')
+        print('Solving using Jacobian...')
+        self.jacob_solve_momentum_eqn(1000)
+        self.disp.display(f'log/{step:06}-jacob.png')
+        self.dump_coef(step, 'jacob')            
+        self.dump_matrix(step, 'jacob')
+        
+        self.init()
+        print('Solving using bicg...')
+        self.bicg_solve_momentum_eqn(1)
+        self.disp.display(f'log/{step:06}-bicg.png')
+        self.dump_coef(step, 'bicg')            
+        self.dump_matrix(step, 'bicg')
 
 # Lid-driven Cavity            
-ssolver = SIMPLESolver(1.0, 1.0, 51, 51) # lx, ly, nx, ny
+ssolver = SIMPLESolver(1.0, 1.0, 50, 50) # lx, ly, nx, ny
 
 # Boundary conditions
 #ssolver.bc['w'][0] = 1.0    # West Normal velocity               
