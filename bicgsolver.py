@@ -28,6 +28,7 @@ class BICGSolver(CGSolver):
             self.Ax[i, j] = 0.0
             self.Ashat[i, j] = 0.0            
             self.p[i, j] = 0.0
+            self.x[i, j] = 0.0            
             self.omega[None] = 1.0
             self.alpha[None] = 1.0
             self.beta[None] = 1.0
@@ -89,7 +90,7 @@ class BICGSolver(CGSolver):
         initial_rTr = self.reduce(self.r, self.r)
         if not quiet:
             print('Initial residual =', ti.sqrt(initial_rTr))
-        self.history.append(f'{ti.sqrt(initial_rTr):e}\n')
+        # self.history.append(f'{ti.sqrt(initial_rTr):e}\n')
         for i in range(self.steps):
             self.rho[None] = self.reduce(self.r, self.r_tld)
             if self.rho[None] == 0.0:
@@ -121,7 +122,7 @@ class BICGSolver(CGSolver):
 
             rTr = self.reduce(self.r, self.r)
             
-            self.history.append(f'{ti.sqrt(rTr):e}\n') # Write converge history; i+1 because starting from 1.
+            #self.history.append(f'{ti.sqrt(rTr):e}\n') # Write converge history; i+1 because starting from 1.
             
             if not quiet:
                 print('Iter =', i+1, ' Residual =', ti.sqrt(rTr))
