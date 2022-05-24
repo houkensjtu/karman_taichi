@@ -89,12 +89,12 @@ class BICGSolver(CGSolver):
         self.init()
         initial_rTr = self.reduce(self.r, self.r)
         if not quiet:
-            print('Initial residual =', ti.sqrt(initial_rTr))
+            print('>>> Initial residual =', ti.sqrt(initial_rTr))
         # self.history.append(f'{ti.sqrt(initial_rTr):e}\n')
         for i in range(self.steps):
             self.rho[None] = self.reduce(self.r, self.r_tld)
             if self.rho[None] == 0.0:
-                print('BICG failed at first place...')
+                print('>>> BICG failed at first place...')
                 break
             if i == 0:
                 self.copy(self.r, self.p)
@@ -125,10 +125,11 @@ class BICGSolver(CGSolver):
             #self.history.append(f'{ti.sqrt(rTr):e}\n') # Write converge history; i+1 because starting from 1.
             
             if not quiet:
-                print('Iter =', i+1, ' Residual =', ti.sqrt(rTr))
+                print('>>> Iter =', i+1, ' Residual =', ti.sqrt(rTr))
 
             if ti.sqrt(rTr / initial_rTr) < eps:
-                print('BICG Converged...')
+                if not quiet:
+                    print('>>> BICG Converged...')
                 break
 
             self.rho_1[None] = self.rho[None]

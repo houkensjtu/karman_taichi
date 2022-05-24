@@ -84,7 +84,7 @@ class CGSolver:
         self.init()
         initial_rTr = self.reduce(self.r, self.r) # Compute initial residual
         if not quiet:
-            print('Initial residual =', ti.sqrt(initial_rTr))
+            print('>>> Initial residual =', ti.sqrt(initial_rTr))
         self.history.append(f'{ti.sqrt(initial_rTr):e}\n')
         old_rTr = initial_rTr
         self.update_p() # Initial p = r + beta * p ( beta = 0 )
@@ -100,7 +100,8 @@ class CGSolver:
             # 3. Check for convergence
             new_rTr = self.reduce(self.r, self.r)
             if ti.sqrt(new_rTr) < ti.sqrt(initial_rTr) * eps:
-                print('>>> Conjugate Gradient method converged.')
+                if not quiet:
+                    print('>>> Conjugate Gradient method converged.')
                 break
             # 4. Compute beta
             self.beta[None] = new_rTr / old_rTr
@@ -110,7 +111,7 @@ class CGSolver:
             self.history.append(f'{ti.sqrt(new_rTr):e}\n') # Write converge history; i+1 because starting from 1.
             # Visualizations
             if not quiet:
-                print(f'Iter = {i+1:4}, Residual = {ti.sqrt(new_rTr):e}')
+                print(f'>>> Iter = {i+1:4}, Residual = {ti.sqrt(new_rTr):e}')
 
     def save_history(self):
         with open('convergence.txt', 'w') as f:
