@@ -17,12 +17,12 @@ class SIMPLESolver:
         self.dy = self.ly / self.ny
         self.rho= 1.00
         self.mu = 0.01
-        self.dt = 100000
+        self.dt = 1e12
         self.real = ti.f64
         
-        self.alpha_p = 0.01
-        self.alpha_u = 0.01
-        self.alpha_m = 0.1
+        self.alpha_p = 0.05
+        self.alpha_u = 0.9
+        self.alpha_m = 0.005
         
         self.u  = ti.field(dtype=self.real, shape=(nx+3, ny+2))
         self.v  = ti.field(dtype=self.real, shape=(nx+2, ny+3))
@@ -80,18 +80,18 @@ class SIMPLESolver:
     def compute_coef_u(self):
         nx, ny, dx, dy, dt, rho, mu = self.nx, self.ny, self.dx, self.dy, self.dt, self.rho, self.mu
         for i,j in ti.ndrange((2,nx+1), (1,ny+1)):
-            self.coef_u[i,j,1] =  -(mu * dy / dx + 0.5 * rho * 0.5 * (self.u[i,j] + self.u[i-1,j]) * dy) # aw
-            self.coef_u[i,j,2] =  -(mu * dy / dx - 0.5 * rho * 0.5 * (self.u[i,j] + self.u[i+1,j]) * dy) # ae
-            self.coef_u[i,j,3] =  -(mu * dx / dy - 0.5 * rho * 0.5 * (self.v[i-1,j+1] + self.v[i,j+1]) * dx)# an
-            self.coef_u[i,j,4] =  -(mu * dx / dy + 0.5 * rho * 0.5 * (self.v[i-1,j] + self.v[i,j]) * dx) # as
+            self.coef_u[i,j,1] =  -(mu * dy / dx + 0.5 * rho * 0.5 * (self.u[i,j] + self.u[i-1,j]) * dy)      # aw
+            self.coef_u[i,j,2] =  -(mu * dy / dx - 0.5 * rho * 0.5 * (self.u[i,j] + self.u[i+1,j]) * dy)      # ae
+            self.coef_u[i,j,3] =  -(mu * dx / dy - 0.5 * rho * 0.5 * (self.v[i-1,j+1] + self.v[i,j+1]) * dx)  # an
+            self.coef_u[i,j,4] =  -(mu * dx / dy + 0.5 * rho * 0.5 * (self.v[i-1,j] + self.v[i,j]) * dx)      # as
             self.coef_u[i,j,0] =  -(self.coef_u[i,j,1] + self.coef_u[i,j,2] + self.coef_u[i,j,3] +\
                                     self.coef_u[i,j,4]) +\
                                     rho * 0.5 * (self.u[i,j] + self.u[i+1,j]) * dy -\
                                     rho * 0.5 * (self.u[i,j] + self.u[i-1,j]) * dy +\
                                     rho * 0.5 * (self.v[i-1,j+1] + self.v[i,j+1]) * dx -\
                                     rho * 0.5 * (self.v[i-1,j] + self.v[i,j]) * dx +\
-                                    rho * dx * dy / dt                            # ap
-            self.b_u[i,j] = (self.p[i-1,j] - self.p[i,j]) * dy + rho * dx * dy / dt * self.u0[i, j]   # rhs
+                                    rho * dx * dy / dt                                                        # ap
+            self.b_u[i,j] = (self.p[i-1,j] - self.p[i,j]) * dy + rho * dx * dy / dt * self.u0[i, j]           # rhs
         
             
     @ti.kernel
@@ -108,14 +108,18 @@ class SIMPLESolver:
                                  rho * 0.5 * (self.u[i,j] + self.u[i,j-1]) * dy +\
                                  rho * 0.5 * (self.v[i,j+1] + self.v[i,j]) * dx -\
                                  rho * 0.5 * (self.v[i,j-1] + self.v[i,j]) * dx +\
-                                 rho * dx * dy / dt                             # ap
-            self.b_v[i,j] = (self.p[i,j-1] - self.p[i,j]) * dx + rho * dx * dy / dt * self.v0[i, j]   # rhs
+                                 rho * dx * dy / dt                                                           # ap
+            self.b_v[i,j] = (self.p[i,j-1] - self.p[i,j]) * dx + rho * dx * dy / dt * self.v0[i, j]           # rhs
 
     @ti.kernel
-    def compute_mdiv(self):
+    def compute_mdiv(self) -> ti.f64:
         nx, ny, dx, dy, rho = self.nx, self.ny, self.dx, self.dy, self.rho
+        max_mdiv = 0.0
         for i,j in ti.ndrange((1,nx+1),(1,ny+1)):  # [1,nx], [1,ny]
             self.mdiv[i,j] = rho * (self.u[i,j] - self.u[i+1,j]) * dy + rho * (self.v[i,j] - self.v[i,j+1]) * dx
+            if ti.abs(self.mdiv[i,j]) > max_mdiv:
+                max_mdiv = ti.abs(self.mdiv[i,j])
+        return max_mdiv
             
     @ti.kernel
     def compute_coef_p(self):
@@ -123,10 +127,10 @@ class SIMPLESolver:
         for i,j in ti.ndrange((1,nx+1),(1,ny+1)):  # [1,nx], [1,ny]
             self.mdiv[i,j] = rho * (self.u[i,j] - self.u[i+1,j]) * dy + rho * (self.v[i,j] - self.v[i,j+1]) * dx
             self.b_p[i,j] = self.mdiv[i,j]
-            self.coef_p[i,j,1] =  -rho * dy * dy / self.coef_u[i,j,0]                 # aw
-            self.coef_p[i,j,2] =  -rho * dy * dy / self.coef_u[i+1,j,0]               # ae
-            self.coef_p[i,j,3] =  -rho * dx * dx / self.coef_v[i,j+1,0]               # an
-            self.coef_p[i,j,4] =  -rho * dx * dx / self.coef_v[i,j,0]                 # as
+            self.coef_p[i,j,1] =  -rho * dy * dy / self.coef_u[i,j,0]                                         # aw
+            self.coef_p[i,j,2] =  -rho * dy * dy / self.coef_u[i+1,j,0]                                       # ae
+            self.coef_p[i,j,3] =  -rho * dx * dx / self.coef_v[i,j+1,0]                                       # an
+            self.coef_p[i,j,4] =  -rho * dx * dx / self.coef_v[i,j,0]                                         # as
 
             if i == 1:
                 self.coef_p[i,j,1] = 0.0
@@ -193,28 +197,37 @@ class SIMPLESolver:
             self.coef_v[nx,j,2] = 0.0
 
     def bicg_solve_momentum_eqn(self, n_iter):
+        residual = 0.0
         for i in range(n_iter):
             self.compute_coef_u()
             self.compute_coef_v()                
             self.set_bc()                
-            u_momentum_solver = BICGSolver(self.coef_u, self.b_u, self.u_mid)
-            u_momentum_solver.solve(eps=1e-4, quiet=False)
-            v_momentum_solver = BICGSolver(self.coef_v, self.b_v, self.v_mid)
-            v_momentum_solver.solve(eps=1e-4, quiet=False)
-            self.update_velocity()
+            self.u_momentum_solver.update_coef(self.coef_u, self.b_u, self.u_mid)
+            self.u_momentum_solver.solve(eps=1e-4, quiet=True)
+            self.v_momentum_solver.update_coef(self.coef_v, self.b_v, self.v_mid)
+            self.v_momentum_solver.solve(eps=1e-4, quiet=True)
+            residual = self.update_velocity()
+        return residual
 
     @ti.kernel
-    def update_velocity(self):
+    def update_velocity(self) -> ti.f64:
         nx, ny, dx, dy = self.nx, self.ny, self.dx, self.dy
+        max_udiff = 0.0
+        max_vdiff = 0.0
         for i,j in ti.ndrange((2,nx+1),(1,ny+1)):
+            if ti.abs(self.u_mid[i,j] - self.u[i,j]) > max_udiff:
+                max_udiff = ti.abs(self.u_mid[i,j] - self.u[i,j])
             self.u[i,j] = self.alpha_m * self.u_mid[i,j] + (1 - self.alpha_m) * self.u[i,j]
         for i,j in ti.ndrange((1,nx+1),(2,ny+1)):
+            if ti.abs(self.v_mid[i,j] - self.v[i,j]) > max_vdiff:
+                max_vdiff = ti.abs(self.v_mid[i,j] - self.v[i,j])
             self.v[i,j] = self.alpha_m * self.v_mid[i,j] + (1 - self.alpha_m) * self.v[i,j]
+        return ti.sqrt(max_udiff ** 2 + max_vdiff ** 2)
 
     def bicg_solve_pcorrection_eqn(self, eps):
         self.compute_coef_p()
-        p_correction_solver = CGSolver(self.coef_p, self.b_p, self.pcor)
-        p_correction_solver.solve(eps, quiet=True)
+        self.p_correction_solver.update_coef(self.coef_p, self.b_p, self.pcor)
+        self.p_correction_solver.solve(eps, quiet=True)
         
     @ti.kernel
     def correct_pressure(self):
@@ -244,19 +257,28 @@ class SIMPLESolver:
 
     def solve(self):
         self.init()
+        self.u_momentum_solver = BICGSolver(self.coef_u, self.b_u, self.u_mid)
+        self.v_momentum_solver = BICGSolver(self.coef_v, self.b_v, self.v_mid)
+        self.p_correction_solver = CGSolver(self.coef_p, self.b_p, self.pcor)
+        momentum_residual = 0.0
         for t in range(1):
-            for step in range(200):
-                print('>>> Soving step', step)
-                self.bicg_solve_momentum_eqn(1)
+            for step in range(100000):
+                momentum_residual = self.bicg_solve_momentum_eqn(1)
                 self.bicg_solve_pcorrection_eqn(1e-8)
                 self.correct_pressure()
                 self.correct_velocity()
-                self.disp.display(f'log/{step:06}-corfin.png')                
-                self.dump_matrix(step, 'corfin')
+                continuity_residual = self.compute_mdiv()
+                print(f'>>> Solving step {step:06} Current continuity residual: {continuity_residual:.3e} Current momentum residual: {momentum_residual:.3e}')
+                if step % 10 == 1:
+                    self.disp.display(f'log/{step:06}-corfin.png')                
+                    self.dump_matrix(step, 'corfin')
+                if momentum_residual < 1e-2 and continuity_residual < 1e-6:
+                    print('>>> Solution converged.')
+                    break
                 #self.dump_coef(step, 'momfin')
                 
 # Lid-driven Cavity            
-ssolver = SIMPLESolver(1.0, 1.0, 50, 50) # lx, ly, nx, ny
+ssolver = SIMPLESolver(1.0, 1.0, 100, 100) # lx, ly, nx, ny
 
 # Boundary conditions
 # ssolver.bc['w'][0] = 1.0    # West Normal velocity               
