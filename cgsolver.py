@@ -36,7 +36,15 @@ class CGSolver:
             self.Ap[i,j] = 0.0
             self.Ax[i,j] = 0.0
             self.p[i,j]  = 0.0
-            self.x[i,j]  = 0.0            
+            self.x[i,j]  = 0.0
+
+    @ti.kernel
+    def update_coef(self, coef:ti.template(), b:ti.template(), x:ti.template()):
+        for i,j,k in coef:
+            self.coef[i,j,k] = coef[i,j,k]
+        for i,j in b:
+            self.b[i,j]    = b[i,j]
+            self.x[i,j]    = x[i,j]
 
     @ti.kernel
     def reduce(self, p: ti.template(), q: ti.template())->ti.f64:
