@@ -20,9 +20,9 @@ class SIMPLESolver:
         self.dt = 1e12
         self.real = ti.f64
         
-        self.alpha_p = 0.05
-        self.alpha_u = 0.9
-        self.alpha_m = 0.005
+        self.alpha_p = 0.1
+        self.alpha_u = 0.8
+        self.alpha_m = 0.05
         
         self.u  = ti.field(dtype=self.real, shape=(nx+3, ny+2))
         self.v  = ti.field(dtype=self.real, shape=(nx+2, ny+3))
@@ -261,24 +261,99 @@ class SIMPLESolver:
         self.v_momentum_solver = BICGSolver(self.coef_v, self.b_v, self.v_mid)
         self.p_correction_solver = CGSolver(self.coef_p, self.b_p, self.pcor)
         momentum_residual = 0.0
+        continuity_residual = 0.0
+
+        ## Time marching
         for t in range(1):
-            for step in range(100000):
+            ## Matplotlib live plotting
+            import numpy as np
+            import matplotlib.pyplot as plt
+            #plt.style.use('_mpl-gallery-nogrid')
+            plt.ion()
+            fig, ax = plt.subplots(2,3, figsize=(12,6))
+            x = []
+            y1 = []
+            y2 = []
+            line1, = ax[0][0].plot(x,y1)
+            line2, = ax[1][0].plot(x,y2)
+            ax[0][0].set_xlabel('Iteration')
+            ax[0][0].set_ylabel('Momentum residual')
+            ax[1][0].set_xlabel('Iteration')
+            ax[1][0].set_ylabel('Continuity residual')                                    
+            ax[0][0].grid()
+            ax[1][0].grid()
+            
+            ugraph = ax[0][2].imshow(self.u.to_numpy())
+            ax[0][2].set_xlabel('U Velocity')
+            vgraph = ax[1][2].imshow(self.v.to_numpy())
+            ax[1][2].set_xlabel('V Velocity')
+
+            y_ref, u_ref = np.loadtxt('data/ghia1982.dat', unpack=True, skiprows=2, usecols=(0, 1))
+            ax[0][1].plot(y_ref, u_ref, 'cs', label='Ghia et al. 1982') # Compare with Ghia's reference data
+            u_xcor = np.linspace(0.01, 0.99, 50)
+            u_ycor = self.u.to_numpy()[26, 1:51]
+            uprof, = ax[0][1].plot(u_xcor, u_ycor, label='Current u profile')
+            ax[0][1].set_xlabel('U velocity profile at x = 0.5')
+            ax[0][1].grid()
+            ax[0][1].legend()            
+            
+            x_ref, v_ref = np.loadtxt('data/ghia1982.dat', unpack=True, skiprows=2, usecols=(6, 7))
+            ax[1][1].plot(x_ref, v_ref, 'cs', label='Ghia et al. 1982') # Compare with Ghia's reference data
+            v_xcor = np.linspace(0.01, 0.99, 50)
+            v_ycor = self.v.to_numpy()[1:51, 26]
+            vprof, = ax[1][1].plot(v_xcor, v_ycor, label='Current v profile')
+            ax[1][1].set_xlabel('V velocity profile at y = 0.5')            
+            ax[1][1].grid()
+            ax[1][1].legend()
+            plt.tight_layout()
+            
+            ## Internal iteration
+            for substep in range(10000):
+                ## SIMPLE algorithm
                 momentum_residual = self.bicg_solve_momentum_eqn(1)
                 self.bicg_solve_pcorrection_eqn(1e-8)
                 self.correct_pressure()
                 self.correct_velocity()
                 continuity_residual = self.compute_mdiv()
-                print(f'>>> Solving step {step:06} Current continuity residual: {continuity_residual:.3e} Current momentum residual: {momentum_residual:.3e}')
-                if step % 10 == 1:
-                    self.disp.display(f'log/{step:06}-corfin.png')                
-                    self.dump_matrix(step, 'corfin')
+                ## Printing residual to the prompt
+                print(f'>>> Solving step {substep:06} Current continuity residual: {continuity_residual:.3e} \
+                Current momentum residual: {momentum_residual:.3e}')
+                self.disp.ti_gui_display(f'', show_gui=True)
+                if substep % 10 == 1:
+                    #self.disp.display(f'log/{substep:06}-corfin.png', show_gui=True)                
+                    self.dump_matrix(substep, 'corfin')
+                ## Convergence check
                 if momentum_residual < 1e-2 and continuity_residual < 1e-6:
                     print('>>> Solution converged.')
                     break
-                #self.dump_coef(step, 'momfin')
+                #self.dump_coef(substep, 'momfin')
+
+                ## Update live plotting
+                x.append(substep)
+                y1.append(momentum_residual)
+                y2.append(continuity_residual)
+                line1.set_xdata(x)
+                line1.set_ydata(y1)
+                line2.set_xdata(x)                                
+                line2.set_ydata(y2)
+                ax[0][0].relim()
+                ax[0][0].autoscale_view()
+                ax[1][0].relim()
+                ax[1][0].autoscale_view()
                 
-# Lid-driven Cavity            
-ssolver = SIMPLESolver(1.0, 1.0, 100, 100) # lx, ly, nx, ny
+                ugraph.set_data(np.flip(np.flip(self.u.to_numpy().transpose()), axis=1))
+                ugraph.autoscale()                
+                vgraph.set_data(np.flip(np.flip(self.v.to_numpy().transpose()), axis=1))
+                vgraph.autoscale()
+
+                uprof.set_ydata(self.u.to_numpy()[26,1:51])
+                vprof.set_ydata(self.v.to_numpy()[1:51,26])                
+
+                fig.canvas.draw()
+                fig.canvas.flush_events()
+
+# Lid-driven Cavity Setup
+ssolver = SIMPLESolver(1.0, 1.0, 50, 50) # lx, ly, nx, ny
 
 # Boundary conditions
 # ssolver.bc['w'][0] = 1.0    # West Normal velocity               
